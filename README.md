@@ -83,12 +83,12 @@ A minimal Next.js project with Monaco Editor integration for code execution and 
 - **See `WORKER_IMPLEMENTATION.md` for detailed documentation**
 
 ### Worker Features:
-- ✅ Safe execution in isolated context
-- ✅ Automatic timeout (2000ms worker + 2500ms main thread)
-- ✅ Console output capture with serialization
-- ✅ Error handling with stack traces
-- ✅ Worker termination and recreation on timeout
-- ✅ Structured message protocol
+- Safe execution in isolated context
+- Automatic timeout (2000ms worker + 2500ms main thread)
+- Console output capture with serialization
+- Error handling with stack traces
+- Worker termination and recreation on timeout
+- Structured message protocol
 
 ## Submit API
 
@@ -135,22 +135,22 @@ A minimal Next.js project with Monaco Editor integration for code execution and 
 
 ## Production Features Implemented
 
-✅ **Database Integration**
+**Database Integration**
 - PostgreSQL with full schema
 - Submission tracking and history
 - Status management and timestamps
 
-✅ **Object Storage**
+**Object Storage**
 - S3-compatible storage for code files
 - Automatic file organization by user/problem
 - Support for AWS S3 or MinIO
 
-✅ **Job Queue**
+**Job Queue**
 - Redis Streams for distributed job processing
 - Priority queue support
 - Consumer groups for worker coordination
 
-✅ **Validation & Security**
+**Validation & Security**
 - Request payload validation
 - Code size limits (10MB max)
 - Language whitelist
