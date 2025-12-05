@@ -1,0 +1,112 @@
+# =============================================================================
+# Prometheus Configuration
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'code-execution'
+    env: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Rule files
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Code execution workers - container pool
+  - job_name: 'container-pool-workers'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['code-execution']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_pool]
+        regex: container
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        regex: 'true'
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+
+  # Code execution workers - microvm pool
+  - job_name: 'microvm-pool-workers'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['code-execution']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_pool]
+        regex: microvm
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        regex: 'true'
+        action: keep
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+
+  # Redis metrics (via redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'redis_stream_length|redis_stream_groups.*|redis_connected_clients|redis_memory_used_bytes'
+        action: keep
+
+  # PostgreSQL metrics (via postgres_exporter)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # API servers
+  - job_name: 'api-servers'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['code-execution']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_component]
+        regex: api
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        regex: 'true'
+        action: keep
+
+  # Node metrics (via node_exporter)
+  - job_name: 'node'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: (.+):(.+)
+        target_label: __address__
+        replacement: $1:9100
+

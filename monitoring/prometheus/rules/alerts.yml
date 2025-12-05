@@ -1,0 +1,343 @@
+# =============================================================================
+# Alerting Rules for Code Execution Engine
+# =============================================================================
+
+groups:
+  # ===========================================================================
+  # Queue Alerts
+  # ===========================================================================
+  - name: queue_alerts
+    interval: 30s
+    rules:
+      # High queue depth warning
+      - alert: HighQueueDepth
+        expr: sum(code_execution_queue_depth{priority="all"}) > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High queue depth detected"
+          description: "Queue depth is {{ $value }} (threshold: 100) for more than 5 minutes"
+          runbook_url: "https://runbooks.example.com/queue-depth"
+
+      # Critical queue depth
+      - alert: CriticalQueueDepth
+        expr: sum(code_execution_queue_depth{priority="all"}) > 500
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          pagerduty: "true"
+        annotations:
+          summary: "Critical queue backlog"
+          description: "Queue depth is {{ $value }} (threshold: 500). System is severely backlogged."
+          runbook_url: "https://runbooks.example.com/queue-depth-critical"
+
+      # Queue growth rate
+      - alert: RapidQueueGrowth
+        expr: |
+          rate(code_execution_queue_depth{priority="all"}[5m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Queue is growing rapidly"
+          description: "Queue is growing at {{ $value | humanize }} jobs/sec for pool {{ $labels.pool }}"
+
+      # Stale queue (jobs not being processed)
+      - alert: StaleQueue
+        expr: |
+          code_execution_queue_depth{priority="all"} > 0
+          and
+          rate(code_execution_jobs_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Queue is stale - no jobs being processed"
+          description: "Queue has {{ $value }} jobs but no processing activity for 10 minutes"
+
+  # ===========================================================================
+  # Error Rate Alerts
+  # ===========================================================================
+  - name: error_alerts
+    interval: 30s
+    rules:
+      # High overall error rate
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(code_execution_errors_total[5m]))
+            /
+            sum(rate(code_execution_jobs_total[5m]))
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanize }}% (threshold: 5%)"
+          runbook_url: "https://runbooks.example.com/high-error-rate"
+
+      # Critical error rate
+      - alert: CriticalErrorRate
+        expr: |
+          (
+            sum(rate(code_execution_errors_total[5m]))
+            /
+            sum(rate(code_execution_jobs_total[5m]))
+          ) * 100 > 20
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          pagerduty: "true"
+        annotations:
+          summary: "Critical error rate"
+          description: "Error rate is {{ $value | humanize }}% (threshold: 20%)"
+
+      # Per-language error spike
+      - alert: LanguageErrorSpike
+        expr: |
+          (
+            sum by (language) (rate(code_execution_errors_total[5m]))
+            /
+            sum by (language) (rate(code_execution_jobs_total[5m]))
+          ) * 100 > 10
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High error rate for {{ $labels.language }}"
+          description: "{{ $labels.language }} error rate is {{ $value | humanize }}%"
+
+      # Timeout rate
+      - alert: HighTimeoutRate
+        expr: |
+          (
+            sum(rate(code_execution_verdicts_total{verdict="TLE"}[5m]))
+            /
+            sum(rate(code_execution_jobs_total[5m]))
+          ) * 100 > 10
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High timeout rate"
+          description: "{{ $value | humanize }}% of jobs are timing out"
+
+  # ===========================================================================
+  # Worker Alerts
+  # ===========================================================================
+  - name: worker_alerts
+    interval: 30s
+    rules:
+      # No workers available
+      - alert: NoWorkersAvailable
+        expr: sum(code_execution_workers{status="active"}) by (pool) == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          pagerduty: "true"
+        annotations:
+          summary: "No active workers in {{ $labels.pool }} pool"
+          description: "All workers in {{ $labels.pool }} pool are down"
+
+      # Low worker count
+      - alert: LowWorkerCount
+        expr: |
+          sum(code_execution_workers{status="active"}) by (pool) < 2
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Low worker count in {{ $labels.pool }} pool"
+          description: "Only {{ $value }} worker(s) active in {{ $labels.pool }} pool"
+
+      # Worker restarts
+      - alert: FrequentWorkerRestarts
+        expr: |
+          sum(rate(code_execution_worker_restarts_total[15m])) by (pool) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Frequent worker restarts in {{ $labels.pool }} pool"
+          description: "Workers restarting at {{ $value | humanize }}/min in {{ $labels.pool }} pool"
+
+      # Worker resource exhaustion
+      - alert: WorkerHighMemory
+        expr: |
+          code_execution_worker_resource_usage{resource="memory_percent"} > 90
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Worker memory usage high"
+          description: "Worker {{ $labels.worker }} memory at {{ $value }}%"
+
+      # Worker CPU saturation
+      - alert: WorkerHighCPU
+        expr: |
+          code_execution_worker_resource_usage{resource="cpu_percent"} > 90
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Worker CPU usage high"
+          description: "Worker {{ $labels.worker }} CPU at {{ $value }}%"
+
+  # ===========================================================================
+  # Latency Alerts
+  # ===========================================================================
+  - name: latency_alerts
+    interval: 30s
+    rules:
+      # High P95 latency
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(code_execution_job_duration_seconds_bucket[5m])) by (le, pool)) > 10
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High P95 latency in {{ $labels.pool }} pool"
+          description: "P95 latency is {{ $value | humanize }}s (threshold: 10s)"
+
+      # Very high P99 latency
+      - alert: VeryHighLatencyP99
+        expr: |
+          histogram_quantile(0.99, sum(rate(code_execution_job_duration_seconds_bucket[5m])) by (le, pool)) > 30
+        for: 10m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Very high P99 latency in {{ $labels.pool }} pool"
+          description: "P99 latency is {{ $value | humanize }}s (threshold: 30s)"
+
+      # Queue wait time
+      - alert: HighQueueWaitTime
+        expr: |
+          histogram_quantile(0.95, sum(rate(code_execution_queue_wait_seconds_bucket[5m])) by (le)) > 60
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Jobs waiting too long in queue"
+          description: "P95 queue wait time is {{ $value | humanize }}s"
+
+  # ===========================================================================
+  # Circuit Breaker Alerts
+  # ===========================================================================
+  - name: circuit_breaker_alerts
+    interval: 30s
+    rules:
+      # Circuit breaker open
+      - alert: CircuitBreakerOpen
+        expr: code_execution_circuit_breaker_state == 2
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Circuit breaker OPEN for {{ $labels.service }}"
+          description: "Circuit breaker is open, requests are being rejected"
+
+      # Circuit breaker flapping
+      - alert: CircuitBreakerFlapping
+        expr: |
+          changes(code_execution_circuit_breaker_state[15m]) > 4
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Circuit breaker flapping for {{ $labels.service }}"
+          description: "Circuit breaker changed state {{ $value }} times in 15 minutes"
+
+  # ===========================================================================
+  # Rate Limiting Alerts
+  # ===========================================================================
+  - name: rate_limit_alerts
+    interval: 30s
+    rules:
+      # High rate limit rejections
+      - alert: HighRateLimitRejections
+        expr: |
+          sum(rate(code_execution_rate_limit_rejections_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High rate limit rejections"
+          description: "Rejecting {{ $value | humanize }} requests/sec due to rate limiting"
+
+      # Global rate limit hit
+      - alert: GlobalRateLimitHit
+        expr: |
+          sum(rate(code_execution_rate_limit_rejections_total{limit_type="global"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Global rate limit being hit"
+          description: "Global rate limit is being hit, system may be overloaded"
+
+  # ===========================================================================
+  # Infrastructure Alerts
+  # ===========================================================================
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # Redis connection issues
+      - alert: RedisConnectionError
+        expr: up{job="redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          pagerduty: "true"
+        annotations:
+          summary: "Redis is unreachable"
+          description: "Cannot connect to Redis. Queue operations will fail."
+
+      # PostgreSQL connection issues
+      - alert: PostgresConnectionError
+        expr: up{job="postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          pagerduty: "true"
+        annotations:
+          summary: "PostgreSQL is unreachable"
+          description: "Cannot connect to PostgreSQL. Submissions will fail."
+
+      # High Redis memory
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory at {{ $value | humanize }}%"
+

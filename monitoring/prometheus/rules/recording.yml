@@ -1,0 +1,246 @@
+# =============================================================================
+# Recording Rules for Code Execution Engine
+# =============================================================================
+# Pre-computed metrics for dashboard efficiency
+
+groups:
+  # ===========================================================================
+  # Job Metrics Recording Rules
+  # ===========================================================================
+  - name: job_metrics
+    interval: 15s
+    rules:
+      # Job throughput per pool
+      - record: code_execution:jobs_per_second:rate5m
+        expr: sum(rate(code_execution_jobs_total[5m])) by (pool)
+      
+      # Job throughput per language
+      - record: code_execution:jobs_per_second_by_language:rate5m
+        expr: sum(rate(code_execution_jobs_total[5m])) by (language)
+      
+      # Total job throughput
+      - record: code_execution:total_jobs_per_second:rate5m
+        expr: sum(rate(code_execution_jobs_total[5m]))
+      
+      # Error rate per pool
+      - record: code_execution:error_rate_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_errors_total[5m])) by (pool)
+            /
+            sum(rate(code_execution_jobs_total[5m])) by (pool)
+          ) * 100
+      
+      # Error rate per language
+      - record: code_execution:error_rate_by_language_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_errors_total[5m])) by (language)
+            /
+            sum(rate(code_execution_jobs_total[5m])) by (language)
+          ) * 100
+      
+      # Overall error rate
+      - record: code_execution:total_error_rate_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_errors_total[5m]))
+            /
+            sum(rate(code_execution_jobs_total[5m]))
+          ) * 100
+
+  # ===========================================================================
+  # Latency Recording Rules
+  # ===========================================================================
+  - name: latency_metrics
+    interval: 15s
+    rules:
+      # P50 latency by pool
+      - record: code_execution:job_duration_p50:rate5m
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(code_execution_job_duration_seconds_bucket[5m])) by (le, pool)
+          )
+      
+      # P95 latency by pool
+      - record: code_execution:job_duration_p95:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(code_execution_job_duration_seconds_bucket[5m])) by (le, pool)
+          )
+      
+      # P99 latency by pool
+      - record: code_execution:job_duration_p99:rate5m
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(code_execution_job_duration_seconds_bucket[5m])) by (le, pool)
+          )
+      
+      # P95 latency by language
+      - record: code_execution:job_duration_p95_by_language:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(code_execution_job_duration_seconds_bucket[5m])) by (le, language)
+          )
+      
+      # Queue wait time P95
+      - record: code_execution:queue_wait_p95:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(code_execution_queue_wait_seconds_bucket[5m])) by (le, pool)
+          )
+      
+      # Average job duration
+      - record: code_execution:job_duration_avg:rate5m
+        expr: |
+          sum(rate(code_execution_job_duration_seconds_sum[5m])) by (pool)
+          /
+          sum(rate(code_execution_job_duration_seconds_count[5m])) by (pool)
+
+  # ===========================================================================
+  # Verdict Recording Rules
+  # ===========================================================================
+  - name: verdict_metrics
+    interval: 15s
+    rules:
+      # AC (Accepted) rate
+      - record: code_execution:ac_rate_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_verdicts_total{verdict="AC"}[5m])) by (pool)
+            /
+            sum(rate(code_execution_jobs_total[5m])) by (pool)
+          ) * 100
+      
+      # WA (Wrong Answer) rate
+      - record: code_execution:wa_rate_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_verdicts_total{verdict="WA"}[5m])) by (pool)
+            /
+            sum(rate(code_execution_jobs_total[5m])) by (pool)
+          ) * 100
+      
+      # TLE (Time Limit Exceeded) rate
+      - record: code_execution:tle_rate_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_verdicts_total{verdict="TLE"}[5m])) by (pool)
+            /
+            sum(rate(code_execution_jobs_total[5m])) by (pool)
+          ) * 100
+      
+      # MLE (Memory Limit Exceeded) rate
+      - record: code_execution:mle_rate_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_verdicts_total{verdict="MLE"}[5m])) by (pool)
+            /
+            sum(rate(code_execution_jobs_total[5m])) by (pool)
+          ) * 100
+      
+      # RE (Runtime Error) rate
+      - record: code_execution:re_rate_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_verdicts_total{verdict="RE"}[5m])) by (pool)
+            /
+            sum(rate(code_execution_jobs_total[5m])) by (pool)
+          ) * 100
+      
+      # CE (Compilation Error) rate
+      - record: code_execution:ce_rate_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_verdicts_total{verdict="CE"}[5m])) by (pool)
+            /
+            sum(rate(code_execution_jobs_total[5m])) by (pool)
+          ) * 100
+
+  # ===========================================================================
+  # Worker Recording Rules
+  # ===========================================================================
+  - name: worker_metrics
+    interval: 15s
+    rules:
+      # Active worker count per pool
+      - record: code_execution:active_workers:current
+        expr: sum(code_execution_workers{status="active"}) by (pool)
+      
+      # Worker utilization (active jobs / workers)
+      - record: code_execution:worker_utilization:current
+        expr: |
+          (
+            sum(code_execution_active_jobs) by (pool)
+            /
+            sum(code_execution_workers{status="active"}) by (pool)
+          )
+      
+      # Worker restart rate
+      - record: code_execution:worker_restart_rate:rate5m
+        expr: sum(rate(code_execution_worker_restarts_total[5m])) by (pool)
+
+  # ===========================================================================
+  # Queue Recording Rules
+  # ===========================================================================
+  - name: queue_metrics
+    interval: 15s
+    rules:
+      # Total queue depth
+      - record: code_execution:queue_depth:current
+        expr: sum(code_execution_queue_depth{priority="all"}) by (pool)
+      
+      # Queue growth rate
+      - record: code_execution:queue_growth_rate:rate5m
+        expr: rate(code_execution_queue_depth{priority="all"}[5m])
+      
+      # Estimated time to clear queue
+      - record: code_execution:queue_eta_seconds:current
+        expr: |
+          code_execution_queue_depth{priority="all"}
+          /
+          (sum(rate(code_execution_jobs_total[5m])) by (pool) + 0.001)
+
+  # ===========================================================================
+  # Rate Limiting Recording Rules
+  # ===========================================================================
+  - name: rate_limit_metrics
+    interval: 15s
+    rules:
+      # Rate limit rejection rate
+      - record: code_execution:rate_limit_rejections_per_second:rate5m
+        expr: sum(rate(code_execution_rate_limit_rejections_total[5m])) by (limit_type)
+      
+      # Rate limit rejection percentage
+      - record: code_execution:rate_limit_rejection_percent:rate5m
+        expr: |
+          (
+            sum(rate(code_execution_rate_limit_rejections_total[5m]))
+            /
+            (sum(rate(code_execution_submissions_total[5m])) + 0.001)
+          ) * 100
+
+  # ===========================================================================
+  # SLI/SLO Recording Rules
+  # ===========================================================================
+  - name: sli_metrics
+    interval: 15s
+    rules:
+      # Availability SLI (jobs completed successfully / total jobs)
+      - record: code_execution:availability_sli:rate5m
+        expr: |
+          sum(rate(code_execution_jobs_total{status="success"}[5m]))
+          /
+          sum(rate(code_execution_jobs_total[5m]))
+      
+      # Latency SLI (jobs under 10s / total jobs)
+      - record: code_execution:latency_sli:rate5m
+        expr: |
+          sum(rate(code_execution_job_duration_seconds_bucket{le="10"}[5m]))
+          /
+          sum(rate(code_execution_job_duration_seconds_count[5m]))
+      
+      # Error budget consumption (1 - availability)
+      - record: code_execution:error_budget_consumption:rate5m
+        expr: 1 - code_execution:availability_sli:rate5m
+

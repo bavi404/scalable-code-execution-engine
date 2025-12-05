@@ -1,0 +1,441 @@
+# =============================================================================
+# Syscall Policy Configuration
+# =============================================================================
+#
+# Defines allowed syscalls per language for eBPF-based anomaly detection.
+# Each language can inherit from 'default' and add language-specific syscalls.
+#
+# Language IDs:
+#   0 = unknown/default
+#   1 = python
+#   2 = javascript (Node.js)
+#   3 = java
+#   4 = compiled (C, C++, Rust, Go)
+
+default:
+  allow:
+    # Basic I/O
+    - read
+    - write
+    - close
+    - fstat
+    - lseek
+    - pread64
+    - pwrite64
+    - readv
+    - writev
+    
+    # Memory management
+    - mmap
+    - mprotect
+    - munmap
+    - brk
+    - mremap
+    - madvise
+    
+    # Process basics
+    - exit_group
+    - exit
+    - rt_sigreturn
+    - rt_sigaction
+    - rt_sigprocmask
+    - sigaltstack
+    
+    # Threading
+    - futex
+    - set_robust_list
+    - get_robust_list
+    - set_tid_address
+    
+    # File descriptors
+    - dup
+    - dup2
+    - dup3
+    - fcntl
+    
+    # Time
+    - clock_gettime
+    - clock_getres
+    - gettimeofday
+    - nanosleep
+    
+    # Random
+    - getrandom
+    
+    # Process info
+    - getpid
+    - getppid
+    - gettid
+    - getuid
+    - getgid
+    - geteuid
+    - getegid
+    
+    # Architecture
+    - arch_prctl
+    
+    # Resource limits
+    - prlimit64
+
+python:
+  inherit: default
+  allow:
+    # File operations
+    - openat
+    - newfstatat
+    - statx
+    - getdents64
+    - access
+    - faccessat
+    - faccessat2
+    - readlink
+    - readlinkat
+    - getcwd
+    
+    # Pipes
+    - pipe
+    - pipe2
+    - eventfd2
+    - timerfd_create
+    - timerfd_settime
+    - timerfd_gettime
+    
+    # Polling
+    - poll
+    - ppoll
+    - select
+    - pselect6
+    - epoll_create
+    - epoll_create1
+    - epoll_ctl
+    - epoll_wait
+    - epoll_pwait
+    
+    # System info
+    - sysinfo
+    - uname
+    
+    # ioctl (limited)
+    - ioctl
+    
+    # Misc
+    - prctl
+    - sched_yield
+    - sched_getaffinity
+    
+    # Clone for threads (NOT fork)
+    - clone3
+
+javascript:
+  inherit: default
+  allow:
+    # File operations
+    - openat
+    - newfstatat
+    - statx
+    - getdents64
+    - access
+    - faccessat
+    - readlink
+    - readlinkat
+    - getcwd
+    
+    # Event loop (libuv)
+    - epoll_create
+    - epoll_create1
+    - epoll_ctl
+    - epoll_wait
+    - epoll_pwait
+    - eventfd2
+    - pipe2
+    
+    # ioctl for TTY
+    - ioctl
+    
+    # V8/Node.js specific
+    - prctl
+    - sched_getaffinity
+    - sched_yield
+    - clone3
+    
+    # Memory
+    - mincore
+    
+    # Timers
+    - timer_create
+    - timer_settime
+    - timer_delete
+    
+    # System info
+    - uname
+    - sysinfo
+
+java:
+  inherit: default
+  allow:
+    # File operations
+    - openat
+    - newfstatat
+    - statx
+    - getdents64
+    - access
+    - faccessat
+    - readlink
+    - readlinkat
+    - getcwd
+    - ftruncate
+    - fallocate
+    
+    # JVM threading
+    - clone
+    - clone3
+    - futex
+    - sched_yield
+    - sched_getaffinity
+    - sched_setaffinity
+    
+    # JVM memory
+    - mmap
+    - munmap
+    - mprotect
+    - madvise
+    - memfd_create
+    
+    # Polling
+    - epoll_create
+    - epoll_create1
+    - epoll_ctl
+    - epoll_wait
+    - epoll_pwait
+    - poll
+    
+    # JVM specific
+    - prctl
+    - ioctl
+    - statfs
+    - fstatfs
+    
+    # System info
+    - uname
+    - sysinfo
+    
+    # Signals
+    - tgkill
+    - rt_tgsigqueueinfo
+
+compiled:
+  inherit: default
+  allow:
+    # Full file operations (for compilation)
+    - openat
+    - open
+    - creat
+    - newfstatat
+    - stat
+    - fstat
+    - lstat
+    - statx
+    - getdents64
+    - access
+    - faccessat
+    - readlink
+    - readlinkat
+    - getcwd
+    - chdir
+    - fchdir
+    
+    # File manipulation (for object files)
+    - rename
+    - renameat
+    - renameat2
+    - unlink
+    - unlinkat
+    - mkdir
+    - mkdirat
+    - rmdir
+    - link
+    - linkat
+    - symlink
+    - symlinkat
+    
+    # File attributes
+    - chmod
+    - fchmod
+    - fchmodat
+    - chown
+    - fchown
+    - fchownat
+    - utime
+    - utimes
+    - utimensat
+    - truncate
+    - ftruncate
+    
+    # Process management (for compilation)
+    - execve
+    - execveat
+    - clone
+    - clone3
+    - vfork
+    - wait4
+    - waitid
+    - kill
+    - tgkill
+    
+    # Pipes for compiler communication
+    - pipe
+    - pipe2
+    - dup
+    - dup2
+    - dup3
+    
+    # Polling
+    - poll
+    - select
+    - pselect6
+    
+    # ioctl
+    - ioctl
+    
+    # System info
+    - uname
+    - sysinfo
+    
+    # Resource
+    - getrlimit
+    - setrlimit
+    - prlimit64
+    - getrusage
+    
+    # Scheduling
+    - sched_yield
+    - sched_getaffinity
+    - prctl
+    
+    # Misc
+    - statfs
+    - fstatfs
+    - getpgrp
+    - getpgid
+    - getsid
+    - setpgid
+    - setsid
+
+# =============================================================================
+# Explicitly Denied Syscalls (NEVER allowed)
+# =============================================================================
+denied:
+  # Network syscalls
+  - socket
+  - connect
+  - accept
+  - accept4
+  - bind
+  - listen
+  - sendto
+  - recvfrom
+  - sendmsg
+  - recvmsg
+  - sendmmsg
+  - recvmmsg
+  - setsockopt
+  - getsockopt
+  - getpeername
+  - getsockname
+  - socketpair
+  - shutdown
+  
+  # Raw network
+  - sendfile
+  - sendfile64
+  - splice
+  - tee
+  - vmsplice
+  
+  # Process debugging/inspection
+  - ptrace
+  - process_vm_readv
+  - process_vm_writev
+  - kcmp
+  
+  # Kernel modules
+  - init_module
+  - finit_module
+  - delete_module
+  
+  # System control
+  - reboot
+  - kexec_load
+  - kexec_file_load
+  - sethostname
+  - setdomainname
+  
+  # I/O ports (dangerous)
+  - iopl
+  - ioperm
+  
+  # Filesystem mount
+  - mount
+  - umount
+  - umount2
+  - pivot_root
+  - chroot
+  
+  # Swap
+  - swapon
+  - swapoff
+  
+  # Accounting
+  - acct
+  
+  # Time manipulation
+  - settimeofday
+  - adjtimex
+  - clock_adjtime
+  - clock_settime
+  
+  # NFS
+  - nfsservctl
+  
+  # Quotas
+  - quotactl
+  - quotactl_fd
+  
+  # Keys
+  - add_key
+  - request_key
+  - keyctl
+  
+  # eBPF (prevent escalation)
+  - bpf
+  
+  # Userfaultfd (can be used for exploits)
+  - userfaultfd
+  
+  # Performance monitoring (information leak)
+  - perf_event_open
+  
+  # Capabilities
+  - capset
+  
+  # Namespace manipulation
+  - unshare
+  - setns
+  
+  # Personality (can change ABI)
+  - personality
+
+# =============================================================================
+# Critical Syscalls (log even when allowed)
+# =============================================================================
+critical:
+  - execve
+  - execveat
+  - clone
+  - clone3
+  - vfork
+  - kill
+  - tgkill
+  - prctl
+  - ptrace
+

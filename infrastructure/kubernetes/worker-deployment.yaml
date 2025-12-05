@@ -1,0 +1,286 @@
+# =============================================================================
+# Kubernetes Deployment - Container Pool Workers
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: container-pool-worker
+  namespace: code-execution
+  labels:
+    app: code-execution
+    component: worker
+    pool: container
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: code-execution
+      component: worker
+      pool: container
+  template:
+    metadata:
+      labels:
+        app: code-execution
+        component: worker
+        pool: container
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: code-execution-worker
+      
+      # Anti-affinity: spread workers across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: code-execution
+                    pool: container
+                topologyKey: kubernetes.io/hostname
+      
+      # Tolerations for spot instances
+      tolerations:
+        - key: "spot"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      
+      containers:
+        - name: worker
+          image: gcr.io/PROJECT_ID/code-execution-worker:latest
+          imagePullPolicy: Always
+          
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          
+          env:
+            - name: WORKER_POOL
+              value: "container"
+            - name: MAX_CONCURRENT_JOBS
+              value: "8"
+            - name: WORKER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: url
+            - name: S3_BUCKET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: worker-config
+                  key: s3_bucket_name
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: worker-config
+                  key: aws_region
+          
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: docker-socket
+              mountPath: /var/run/docker.sock
+        
+        # Sidecar: code runner container
+        - name: runner
+          image: gcr.io/PROJECT_ID/code-runner:latest
+          command: ["sleep", "infinity"]
+          
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      
+      volumes:
+        - name: workspace
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: docker-socket
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+      
+      terminationGracePeriodSeconds: 60
+
+---
+# =============================================================================
+# Kubernetes Deployment - MicroVM Pool Workers
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microvm-pool-worker
+  namespace: code-execution
+  labels:
+    app: code-execution
+    component: worker
+    pool: microvm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: code-execution
+      component: worker
+      pool: microvm
+  template:
+    metadata:
+      labels:
+        app: code-execution
+        component: worker
+        pool: microvm
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: code-execution-worker
+      
+      # Node selector for KVM-capable nodes
+      nodeSelector:
+        kvm: "true"
+      
+      # Anti-affinity
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: code-execution
+                  pool: microvm
+              topologyKey: kubernetes.io/hostname
+      
+      containers:
+        - name: worker
+          image: gcr.io/PROJECT_ID/code-execution-worker:latest
+          imagePullPolicy: Always
+          
+          ports:
+            - name: http
+              containerPort: 8080
+          
+          env:
+            - name: WORKER_POOL
+              value: "microvm"
+            - name: MAX_CONCURRENT_JOBS
+              value: "2"
+            - name: WORKER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: url
+            - name: FC_KERNEL_PATH
+              value: "/var/lib/firecracker/vmlinux"
+            - name: FC_ROOTFS_PATH
+              value: "/var/lib/firecracker/rootfs.ext4"
+          
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "4000m"
+              memory: "8Gi"
+          
+          securityContext:
+            privileged: true  # Required for KVM access
+          
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: kvm
+              mountPath: /dev/kvm
+            - name: firecracker-assets
+              mountPath: /var/lib/firecracker
+      
+      volumes:
+        - name: workspace
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: kvm
+          hostPath:
+            path: /dev/kvm
+            type: CharDevice
+        - name: firecracker-assets
+          hostPath:
+            path: /var/lib/firecracker
+            type: Directory
+      
+      terminationGracePeriodSeconds: 120
+

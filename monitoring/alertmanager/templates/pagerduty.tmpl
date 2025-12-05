@@ -1,0 +1,29 @@
+{{ define "pagerduty.description" -}}
+{{ range .Alerts.Firing -}}
+{{ .Annotations.summary }}
+{{ end -}}
+{{- end }}
+
+{{ define "pagerduty.firing" -}}
+{{ range .Alerts.Firing -}}
+Alert: {{ .Labels.alertname }}
+Summary: {{ .Annotations.summary }}
+Description: {{ .Annotations.description }}
+Severity: {{ .Labels.severity }}
+{{ if .Labels.pool }}Pool: {{ .Labels.pool }}{{ end }}
+{{ if .Labels.language }}Language: {{ .Labels.language }}{{ end }}
+Started: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+{{ if .Annotations.runbook_url }}Runbook: {{ .Annotations.runbook_url }}{{ end }}
+---
+{{ end -}}
+{{- end }}
+
+{{ define "pagerduty.resolved" -}}
+{{ range .Alerts.Resolved -}}
+Alert: {{ .Labels.alertname }} (Resolved)
+Summary: {{ .Annotations.summary }}
+Resolved: {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}
+---
+{{ end -}}
+{{- end }}
+
