@@ -1,0 +1,63 @@
+{
+  "final_verdict": "TLE",
+  "total_score": 3.5,
+  "max_score": 8.0,
+  "score_percentage": 43.75,
+  "passed_count": 3,
+  "failed_count": 2,
+  "total_count": 5,
+  "total_time_ms": 2176,
+  "max_memory_kb": 15000,
+  "test_verdicts": [
+    {
+      "test_id": "test-1",
+      "verdict": "AC",
+      "score": 1.0,
+      "max_score": 1.0,
+      "execution_time_ms": 45,
+      "memory_used_kb": 12800,
+      "message": "Output matches expected"
+    },
+    {
+      "test_id": "test-2",
+      "verdict": "AC",
+      "score": 1.0,
+      "max_score": 1.0,
+      "execution_time_ms": 42,
+      "memory_used_kb": 12600,
+      "message": "Output matches expected"
+    },
+    {
+      "test_id": "test-3",
+      "verdict": "AC",
+      "score": 1.5,
+      "max_score": 1.5,
+      "execution_time_ms": 38,
+      "memory_used_kb": 12500,
+      "message": "Output matches expected"
+    },
+    {
+      "test_id": "test-4",
+      "verdict": "WA",
+      "score": 0.0,
+      "max_score": 2.0,
+      "execution_time_ms": 51,
+      "memory_used_kb": 13000,
+      "message": "Difference at line 1",
+      "expected_output": "1 3",
+      "actual_output": "0 4"
+    },
+    {
+      "test_id": "test-5",
+      "verdict": "TLE",
+      "score": 0.0,
+      "max_score": 2.5,
+      "execution_time_ms": 2000,
+      "memory_used_kb": 15000,
+      "message": "Time limit exceeded (2000ms)"
+    }
+  ],
+  "compilation_status": "success",
+  "judge_message": null
+}
+
