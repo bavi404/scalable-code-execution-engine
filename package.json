@@ -6,19 +6,28 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:setup": "psql -U postgres -f db/schema.sql",
+    "worker": "ts-node workers/executor.ts"
   },
   "dependencies": {
     "next": "^14.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@monaco-editor/react": "^4.6.0"
+    "@monaco-editor/react": "^4.6.0",
+    "pg": "^8.11.3",
+    "redis": "^4.6.12",
+    "@aws-sdk/client-s3": "^3.490.0",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "typescript": "^5.0.0"
+    "@types/pg": "^8.10.9",
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.2"
   }
 }
 

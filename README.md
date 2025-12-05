@@ -94,12 +94,20 @@ A minimal Next.js project with Monaco Editor integration for code execution and 
 
 **Endpoint:** `POST /api/submit`
 
+**Full Implementation with PostgreSQL, Redis, and S3:**
+
 **Request Body:**
 ```json
 {
   "code": "console.log('Hello');",
   "language": "javascript",
-  "problemId": "problem-1"
+  "problemId": "problem-1",
+  "userId": "user-123",
+  "metadata": {
+    "timeLimit": 5000,
+    "memoryLimit": 262144,
+    "priority": "normal"
+  }
 }
 ```
 
@@ -108,16 +116,61 @@ A minimal Next.js project with Monaco Editor integration for code execution and 
 {
   "success": true,
   "message": "Code submitted successfully",
-  "submissionId": "sub_1234567890_abc123xyz",
+  "submissionId": "123e4567-e89b-12d3-a456-426614174000",
   "timestamp": "2025-12-01T00:00:00.000Z"
 }
 ```
 
+**See `API_DOCUMENTATION.md` for complete API reference.**
+
+### Backend Architecture
+
+1. **Validation**: Payload size, language support, field types
+2. **S3 Storage**: Upload code to S3-compatible storage
+3. **PostgreSQL**: Store submission metadata in database
+4. **Redis Stream**: Queue execution job with S3 key
+5. **Response**: Return submission ID immediately
+
+**See `DEPLOYMENT.md` for setup instructions.**
+
+## Production Features Implemented
+
+✅ **Database Integration**
+- PostgreSQL with full schema
+- Submission tracking and history
+- Status management and timestamps
+
+✅ **Object Storage**
+- S3-compatible storage for code files
+- Automatic file organization by user/problem
+- Support for AWS S3 or MinIO
+
+✅ **Job Queue**
+- Redis Streams for distributed job processing
+- Priority queue support
+- Consumer groups for worker coordination
+
+✅ **Validation & Security**
+- Request payload validation
+- Code size limits (10MB max)
+- Language whitelist
+- Rate limiting ready
+
+## Architecture
+
+```
+Client → API → [Validation] → S3 Upload → DB Insert → Redis Queue → Workers
+                                    ↓           ↓            ↓
+                                  S3 Key    Submission   Job Message
+                                            Record
+```
+
 ## Next Steps
 
-- Implement actual code execution backend
-- Add test case validation
-- Store submissions in a database
-- Add authentication
-- Support more languages (Python, Java, etc.)
+- Implement worker service to consume jobs from Redis
+- Add test case validation and execution
+- Implement authentication and authorization
+- Add user management and problem repository
+- Set up monitoring and logging
+- Deploy with Docker/Kubernetes
 
