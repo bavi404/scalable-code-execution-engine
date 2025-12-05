@@ -1,10 +1,10 @@
 # Code Runner Docker Image
-# Multi-language support for code execution
+# Multi-language support with resource limits and network isolation
 
 FROM ubuntu:22.04
 
 LABEL maintainer="Code Execution Engine"
-LABEL description="Sandboxed code execution environment"
+LABEL description="Sandboxed code execution environment with resource limits"
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -16,8 +16,12 @@ RUN apt-get update && apt-get install -y \
     wget \
     ca-certificates \
     gnupg \
+    time \
     # Build essentials (for compiled languages)
     build-essential \
+    # Resource management
+    cgroup-tools \
+    util-linux \
     # Languages
     python3 \
     python3-pip \
@@ -25,6 +29,8 @@ RUN apt-get update && apt-get install -y \
     golang-go \
     ruby \
     php \
+    # Security
+    iptables \
     # Rust (via rustup)
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     # Node.js 20.x
@@ -32,7 +38,9 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y nodejs \
     # Cleanup
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # Remove network tools for security
+    && rm -f /usr/bin/wget /usr/bin/curl /usr/bin/nc /usr/bin/netcat 2>/dev/null || true
 
 # Add Rust to PATH
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -44,25 +52,42 @@ RUN npm install -g typescript ts-node
 RUN pip3 install --no-cache-dir numpy
 
 # Create non-root user for running code
-RUN groupadd -r runner && useradd -r -g runner -d /home/runner -m runner
+RUN groupadd -r runner && useradd -r -g runner -d /home/runner -m -s /bin/bash runner
 
 # Create directories
-RUN mkdir -p /runner /workspace && \
-    chown -R runner:runner /runner /workspace
+RUN mkdir -p /runner /workspace /output && \
+    chown -R runner:runner /runner /workspace /output
 
-# Copy runner script
+# Copy all runner scripts
+COPY harness.sh /runner/harness.sh
 COPY runner.js /runner/runner.js
+COPY run_tests.py /runner/run_tests.py
+COPY network_isolation.sh /runner/network_isolation.sh
 
 # Set permissions
-RUN chmod +x /runner/runner.js && \
-    chown runner:runner /runner/runner.js
+RUN chmod +x /runner/*.sh /runner/*.py /runner/*.js && \
+    chown -R runner:runner /runner
 
-# Switch to non-root user
+# Create seccomp profile directory
+RUN mkdir -p /etc/seccomp
+
+# Environment variables
+ENV WORKSPACE_DIR=/workspace
+ENV OUTPUT_DIR=/output
+ENV USE_CGROUPS=false
+ENV USE_SECCOMP=true
+
+# Switch to non-root user (for security)
 USER runner
 
 # Set working directory
 WORKDIR /workspace
 
-# Default command
-CMD ["node", "/runner/runner.js"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD echo "healthy" || exit 1
+
+# Default command - run harness with environment variables
+# Override with: docker run ... code-runner /runner/harness.sh javascript solution.js 5 256
+CMD ["/runner/harness.sh"]
 

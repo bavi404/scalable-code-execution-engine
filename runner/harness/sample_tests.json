@@ -1,0 +1,43 @@
+[
+  {
+    "id": "test-1",
+    "input": "5 3\n",
+    "expected_output": "8",
+    "time_limit_ms": 1000,
+    "hidden": false,
+    "weight": 1.0
+  },
+  {
+    "id": "test-2",
+    "input": "10 20\n",
+    "expected_output": "30",
+    "time_limit_ms": 1000,
+    "hidden": false,
+    "weight": 1.0
+  },
+  {
+    "id": "test-3",
+    "input": "0 0\n",
+    "expected_output": "0",
+    "time_limit_ms": 1000,
+    "hidden": false,
+    "weight": 1.0
+  },
+  {
+    "id": "test-4-large",
+    "input": "999999 1\n",
+    "expected_output": "1000000",
+    "time_limit_ms": 2000,
+    "hidden": true,
+    "weight": 2.0
+  },
+  {
+    "id": "test-5-negative",
+    "input": "-5 10\n",
+    "expected_output": "5",
+    "time_limit_ms": 1000,
+    "hidden": true,
+    "weight": 1.5
+  }
+]
+

@@ -1,0 +1,95 @@
+# Code Runner Docker Image with Execution Harness
+#
+# Multi-language support with resource limits, network isolation,
+# and comprehensive result reporting.
+#
+
+FROM ubuntu:22.04
+
+LABEL maintainer="Code Execution Engine"
+LABEL description="Sandboxed code execution environment with harness"
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies and tools
+RUN apt-get update && apt-get install -y \
+    # Core utilities
+    curl \
+    wget \
+    ca-certificates \
+    gnupg \
+    bc \
+    jq \
+    # Time and resource measurement
+    time \
+    util-linux \
+    # Process management
+    procps \
+    # Cgroups tools
+    cgroup-tools \
+    # Network tools (for testing isolation)
+    iproute2 \
+    iptables \
+    iputils-ping \
+    dnsutils \
+    # Build essentials
+    build-essential \
+    # Languages
+    python3 \
+    python3-pip \
+    openjdk-17-jdk \
+    golang-go \
+    ruby \
+    php \
+    # Rust (via rustup)
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    # Node.js 20.x
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    # Cleanup
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Rust to PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install TypeScript globally
+RUN npm install -g typescript ts-node
+
+# Create non-root user for running code
+RUN groupadd -r runner && useradd -r -g runner -d /home/runner -m runner
+
+# Create directories
+RUN mkdir -p /runner /workspace /output && \
+    chown -R runner:runner /runner /workspace /output
+
+# Copy harness scripts
+COPY harness/ /runner/harness/
+
+# Copy runner.js (Node.js version for compatibility)
+COPY runner.js /runner/runner.js
+
+# Set permissions
+RUN chmod +x /runner/harness/*.sh /runner/harness/*.py /runner/runner.js && \
+    chown -R runner:runner /runner
+
+# Set environment defaults
+ENV LANGUAGE=javascript
+ENV CODE_FILE=solution.js
+ENV TIMEOUT_SEC=5
+ENV MEMORY_LIMIT_KB=262144
+ENV USE_CGROUPS=0
+ENV WORKSPACE=/workspace
+ENV OUTPUT_DIR=/output
+
+# Switch to non-root user for execution
+USER runner
+
+# Set working directory
+WORKDIR /workspace
+
+# Default: Run harness script
+ENTRYPOINT ["/runner/harness/run.sh"]
+CMD ["javascript", "solution.js", "/output"]
+
