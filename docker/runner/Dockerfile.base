@@ -1,0 +1,36 @@
+# Base Runner Image
+# This image contains common utilities for all language runners
+
+FROM alpine:3.19
+
+LABEL maintainer="Code Execution Engine"
+LABEL description="Base image for code execution"
+
+# Install common utilities
+RUN apk add --no-cache \
+    bash \
+    coreutils \
+    curl \
+    jq \
+    procps \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user for security
+RUN addgroup -S runner && adduser -S runner -G runner
+
+# Create workspace directory
+RUN mkdir -p /workspace && chown runner:runner /workspace
+
+# Copy runner script
+COPY runner.sh /usr/local/bin/runner.sh
+RUN chmod +x /usr/local/bin/runner.sh
+
+# Set working directory
+WORKDIR /workspace
+
+# Switch to non-root user
+USER runner
+
+# Default command
+CMD ["/bin/sh"]
+

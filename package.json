@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "db:setup": "psql -U postgres -f db/schema.sql",
-    "worker": "ts-node workers/executor.ts"
+    "worker": "ts-node workers/executor.ts",
+    "worker:dev": "ts-node-dev --respawn workers/executor.ts",
+    "runner:build": "cd runner && docker build -t code-runner:latest ."
   },
   "dependencies": {
     "next": "^14.0.0",
@@ -18,7 +20,8 @@
     "pg": "^8.11.3",
     "redis": "^4.6.12",
     "@aws-sdk/client-s3": "^3.490.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "dockerode": "^4.0.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -26,8 +29,10 @@
     "@types/react-dom": "^18.2.0",
     "@types/pg": "^8.10.9",
     "@types/uuid": "^9.0.7",
+    "@types/dockerode": "^3.3.23",
     "typescript": "^5.0.0",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0"
   }
 }
 
