@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { submissionDb } from '../../lib/db';
-import { uploadCode } from '../../lib/s3';
-import { pushJob, ExecutionJob } from '../../lib/redis';
+import { uploadCode, deleteCode } from '../../lib/s3';
+import { pushJob, ExecutionJob, consumeRateLimit } from '../../lib/redis';
 
 // Supported languages
 const SUPPORTED_LANGUAGES = [
@@ -21,6 +21,10 @@ const SUPPORTED_LANGUAGES = [
 const MAX_CODE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_PROBLEM_ID_LENGTH = 255;
 const MAX_USER_ID_LENGTH = 255;
+const RATE_LIMITS = {
+  userPerMinute: { limit: 10, windowSeconds: 60 },
+  ipPerMinute: { limit: 20, windowSeconds: 60 },
+};
 
 interface SubmitRequest {
   code: string;
@@ -31,6 +35,12 @@ interface SubmitRequest {
     timeLimit?: number;
     memoryLimit?: number;
     priority?: 'low' | 'normal' | 'high';
+    testCases?: Array<{
+      id?: string;
+      input: string;
+      expectedOutput: string;
+      stopOnFailure?: boolean;
+    }>;
   };
 }
 
@@ -58,8 +68,45 @@ export default async function handler(
 
   try {
     const { code, language, problemId, userId, metadata }: SubmitRequest = req.body;
+    const ipHeader = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const clientIp = Array.isArray(ipHeader) ? ipHeader[0] : (ipHeader || '').split(',')[0].trim();
 
     // ===== VALIDATION =====
+
+    // 0. Rate limiting (best effort; allow on Redis error)
+    try {
+      if (userId) {
+        const userLimit = await consumeRateLimit(
+          `user:${userId}`,
+          RATE_LIMITS.userPerMinute.limit,
+          RATE_LIMITS.userPerMinute.windowSeconds
+        );
+        if (!userLimit.allowed) {
+          return res.status(429).json({
+            success: false,
+            message: 'Too many submissions for this user. Please try again later.',
+            error: 'RATE_LIMIT_EXCEEDED',
+          });
+        }
+      }
+
+      if (clientIp) {
+        const ipLimit = await consumeRateLimit(
+          `ip:${clientIp}`,
+          RATE_LIMITS.ipPerMinute.limit,
+          RATE_LIMITS.ipPerMinute.windowSeconds
+        );
+        if (!ipLimit.allowed) {
+          return res.status(429).json({
+            success: false,
+            message: 'Too many submissions from this IP. Please try again later.',
+            error: 'RATE_LIMIT_EXCEEDED',
+          });
+        }
+      }
+    } catch (rateError) {
+      console.warn('Rate limit check failed, allowing request:', rateError);
+    }
 
     // 1. Check required fields
     if (!code || !language || !problemId || !userId) {
@@ -129,6 +176,7 @@ export default async function handler(
     const timeLimit = metadata?.timeLimit || 5000; // Default 5 seconds
     const memoryLimit = metadata?.memoryLimit || 262144; // Default 256MB
     const priority = metadata?.priority || 'normal';
+    const testCases = metadata?.testCases;
 
     if (timeLimit < 100 || timeLimit > 30000) {
       return res.status(400).json({
@@ -144,6 +192,33 @@ export default async function handler(
         message: 'Priority must be low, normal, or high',
         error: 'INVALID_PRIORITY',
       });
+    }
+
+    // 7. Validate test cases (optional)
+    if (testCases) {
+      if (!Array.isArray(testCases)) {
+        return res.status(400).json({
+          success: false,
+          message: 'testCases must be an array',
+          error: 'INVALID_TEST_CASES',
+        });
+      }
+      if (testCases.length > 100) {
+        return res.status(400).json({
+          success: false,
+          message: 'Too many test cases (max 100)',
+          error: 'INVALID_TEST_CASES',
+        });
+      }
+      for (const tc of testCases) {
+        if (typeof tc?.input !== 'string' || typeof tc?.expectedOutput !== 'string') {
+          return res.status(400).json({
+            success: false,
+            message: 'Each test case requires string input and expectedOutput',
+            error: 'INVALID_TEST_CASES',
+          });
+        }
+      }
     }
 
     // ===== PROCESSING =====
@@ -188,6 +263,10 @@ export default async function handler(
       submissionId = submission.id;
     } catch (error: any) {
       console.error('Database insert failed:', error);
+      // Cleanup orphaned object if DB write fails
+      if (s3Key) {
+        await deleteCode(s3Key);
+      }
       return res.status(500).json({
         success: false,
         message: 'Failed to create submission record',
@@ -208,6 +287,7 @@ export default async function handler(
         memoryLimit,
         priority,
         createdAt: new Date().toISOString(),
+        testCases: testCases ? JSON.stringify(testCases) : undefined,
       };
 
       const jobId = await pushJob(job);

@@ -92,6 +92,12 @@ export const queueDepthGauge = new Gauge({
   labelNames: ['pool', 'priority'],
   registers: [register],
 });
+export const dlqDepthGauge = new Gauge({
+  name: 'code_execution_dlq_depth',
+  help: 'Number of jobs in dead-letter queue',
+  labelNames: ['pool'],
+  registers: [register],
+});
 
 /**
  * Gauge: Queue processing rate
@@ -330,6 +336,15 @@ export async function updateQueueMetrics(redis: RedisClientType): Promise<void> 
     } catch (e) {
       // Stream may not exist yet
     }
+  }
+
+  // DLQ depth (shared across pools)
+  try {
+    const dlqKey = 'code-execution-jobs:dlq';
+    const length = await redis.xLen(dlqKey);
+    dlqDepthGauge.set({ pool: 'all' }, length);
+  } catch (e) {
+    // ignore if DLQ not present
   }
 }
 

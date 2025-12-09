@@ -64,6 +64,8 @@ export interface ExecutionJob {
   memoryLimit?: number;
   priority?: 'low' | 'normal' | 'high';
   createdAt: string;
+  attempts?: number;
+  testCases?: string; // JSON string of test cases, optional
 }
 
 /**
@@ -71,6 +73,7 @@ export interface ExecutionJob {
  */
 export async function pushJob(job: ExecutionJob): Promise<string> {
   const client = await getRedisClient();
+  const attempts = job.attempts ?? 1;
 
   try {
     // Add job to stream with automatic ID generation (*)
@@ -88,6 +91,8 @@ export async function pushJob(job: ExecutionJob): Promise<string> {
         memoryLimit: (job.memoryLimit || 262144).toString(),
         priority: job.priority || 'normal',
         createdAt: job.createdAt,
+        attempts: attempts.toString(),
+        ...(job.testCases ? { testCases: job.testCases } : {}),
       },
       {
         TRIM: {
@@ -173,6 +178,8 @@ export async function readJobs(
           memoryLimit: parseInt(data.memoryLimit),
           priority: data.priority as 'low' | 'normal' | 'high',
           createdAt: data.createdAt,
+          attempts: parseInt(data.attempts || '1'),
+          testCases: data.testCases,
         });
       }
     }
@@ -193,6 +200,56 @@ export async function ackJob(
 ): Promise<void> {
   const client = await getRedisClient();
   await client.xAck(STREAM_KEY, consumerGroup, jobId);
+}
+
+/**
+ * Push job to dead-letter stream with reason.
+ */
+export async function pushDeadLetter(job: ExecutionJob, reason: string): Promise<string> {
+  const client = await getRedisClient();
+  const dlqKey = `${STREAM_KEY}:dlq`;
+  return await client.xAdd(dlqKey, '*', {
+    submissionId: job.submissionId,
+    userId: job.userId,
+    problemId: job.problemId,
+    language: job.language,
+    s3Key: job.s3Key,
+    codeSizeBytes: job.codeSizeBytes.toString(),
+    timeLimit: (job.timeLimit || 5000).toString(),
+    memoryLimit: (job.memoryLimit || 262144).toString(),
+    priority: job.priority || 'normal',
+    createdAt: job.createdAt,
+    attempts: (job.attempts || 1).toString(),
+    reason,
+    ...(job.testCases ? { testCases: job.testCases } : {}),
+  });
+}
+
+/**
+ * Simple token bucket style rate limiter.
+ * Returns whether a request is allowed for the given key.
+ */
+export async function consumeRateLimit(
+  key: string,
+  maxRequests: number,
+  windowSeconds: number
+): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
+  const client = await getRedisClient();
+  const now = Math.floor(Date.now() / 1000);
+  const bucketKey = `rate:${key}:${windowSeconds}`;
+
+  // Use INCR with expiry to approximate a fixed window counter.
+  const current = await client.incr(bucketKey);
+  if (current === 1) {
+    await client.expire(bucketKey, windowSeconds);
+  }
+
+  const allowed = current <= maxRequests;
+  const ttl = await client.ttl(bucketKey);
+  const resetAt = now + (ttl > 0 ? ttl : windowSeconds);
+  const remaining = Math.max(0, maxRequests - current);
+
+  return { allowed, remaining, resetAt };
 }
 
 /**

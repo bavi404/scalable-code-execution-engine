@@ -36,6 +36,9 @@ const result = {
   memoryUsedKb: 0,
   testResults: [],
 };
+const MAX_RESULT_STRING = 16 * 1024; // cap output/error in JSON
+const MAX_TEST_RESULTS = 50; // avoid unbounded arrays
+const RUN_ID = process.env.RUN_ID || `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
 /**
  * Get command and args for running code based on language
@@ -354,6 +357,7 @@ async function main() {
     result.success = false;
     result.error = error.message;
     result.executionTimeMs = Date.now() - startTime;
+    logEvent('runner_error', { error: error.message });
   }
 
   outputResult();
@@ -363,11 +367,47 @@ async function main() {
  * Output result as JSON to stdout
  */
 function outputResult() {
+  // Clamp payload sizes to avoid oversized messages
+  if (typeof result.output === 'string') {
+    result.output = truncate(result.output, MAX_RESULT_STRING);
+  }
+  if (typeof result.error === 'string') {
+    result.error = truncate(result.error, MAX_RESULT_STRING);
+  }
+  if (Array.isArray(result.testResults) && result.testResults.length > MAX_TEST_RESULTS) {
+    result.testResults = result.testResults.slice(0, MAX_TEST_RESULTS);
+  }
+
   // Output JSON result to stdout (worker reads this)
-  console.log(JSON.stringify(result));
+  const payload = `__RESULT__${JSON.stringify(result)}\n`;
+  process.stdout.write(payload);
+  logEvent('runner_result', {
+    success: result.success,
+    exitCode: result.exitCode,
+    executionTimeMs: result.executionTimeMs,
+    memoryUsedKb: result.memoryUsedKb,
+  });
   
   // Exit with appropriate code
   process.exit(result.success ? 0 : 1);
+}
+
+function truncate(str, maxLen) {
+  if (!str || str.length <= maxLen) return str;
+  return str.slice(0, maxLen) + '\n... (truncated)';
+}
+
+function logEvent(event, data = {}) {
+  const payload = {
+    event,
+    ts: new Date().toISOString(),
+    runId: RUN_ID,
+    language: LANGUAGE,
+    codeFile: CODE_FILE,
+    ...data,
+  };
+  // Avoid interfering with __RESULT__ parsing; structured log is separate line
+  console.log(JSON.stringify(payload));
 }
 
 // Run main

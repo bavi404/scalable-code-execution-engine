@@ -9,10 +9,13 @@ import Docker from 'dockerode';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import * as http from 'http';
+import { existsSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { getRedisClient, ackJob, ExecutionJob } from '../lib/redis';
-import { downloadCode } from '../lib/s3';
-import { submissionDb } from '../lib/db';
+import { getRedisClient, ackJob, ExecutionJob, pushJob, pushDeadLetter } from '../lib/redis';
+import { downloadCode, getS3Client } from '../lib/s3';
+import { submissionDb, query } from '../lib/db';
+import { recordJobStart, recordJobEnd, recordJobCompletion, jobErrorsCounter } from '../monitoring/metrics';
 
 // Configuration
 const CONFIG = {
@@ -25,6 +28,13 @@ const CONFIG = {
   DEFAULT_TIMEOUT_MS: parseInt(process.env.DEFAULT_TIMEOUT_MS || '5000'),
   DEFAULT_MEMORY_MB: parseInt(process.env.DEFAULT_MEMORY_MB || '256'),
   WORKSPACE_BASE: process.env.WORKSPACE_BASE || os.tmpdir(),
+  MAX_JOB_ATTEMPTS: parseInt(process.env.MAX_JOB_ATTEMPTS || '3'),
+  RETRY_BACKOFF_BASE_MS: parseInt(process.env.RETRY_BACKOFF_BASE_MS || '2000'),
+  RETRY_BACKOFF_MAX_MS: parseInt(process.env.RETRY_BACKOFF_MAX_MS || '20000'),
+  POOL_NAME: process.env.POOL_NAME || 'container',
+  HEALTH_PORT: parseInt(process.env.HEALTH_PORT || '8081'),
+  HEALTH_PATH: process.env.HEALTH_PATH || '/health',
+  READY_PATH: process.env.READY_PATH || '/ready',
 };
 
 // Docker client (for local development)
@@ -61,10 +71,17 @@ let isShuttingDown = false;
  * Main worker loop
  */
 async function startWorker(): Promise<void> {
-  console.log(`🚀 Starting worker: ${CONFIG.WORKER_NAME}`);
-  console.log(`📋 Consumer group: ${CONFIG.CONSUMER_GROUP}`);
-  console.log(`🐳 Runner image: ${CONFIG.RUNNER_IMAGE}`);
-  console.log(`⚡ Max concurrent jobs: ${CONFIG.MAX_CONCURRENT_JOBS}`);
+  validateConfig();
+  await verifyDbSchema();
+  startHealthServer();
+
+  logEvent('worker_start', {
+    worker: CONFIG.WORKER_NAME,
+    consumerGroup: CONFIG.CONSUMER_GROUP,
+    runnerImage: CONFIG.RUNNER_IMAGE,
+    maxConcurrentJobs: CONFIG.MAX_CONCURRENT_JOBS,
+    pool: CONFIG.POOL_NAME,
+  });
 
   // Ensure consumer group exists
   await ensureConsumerGroup();
@@ -161,6 +178,7 @@ async function claimJobs(count: number): Promise<Array<{ id: string; job: Execut
           memoryLimit: parseInt(data.memoryLimit) || CONFIG.DEFAULT_MEMORY_MB * 1024,
           priority: data.priority as 'low' | 'normal' | 'high',
           createdAt: data.createdAt,
+          attempts: parseInt(data.attempts || '1'),
         },
       });
     }
@@ -175,12 +193,19 @@ async function claimJobs(count: number): Promise<Array<{ id: string; job: Execut
 async function processJob(jobData: { id: string; job: ExecutionJob }): Promise<void> {
   const { id: messageId, job } = jobData;
   const startTime = Date.now();
+  const attempts = job.attempts || 1;
 
-  console.log(`📥 Processing job: ${job.submissionId} (${job.language})`);
+  logEvent('job_start', {
+    submissionId: job.submissionId,
+    language: job.language,
+    attempts,
+    worker: CONFIG.WORKER_NAME,
+  });
 
   let workspaceDir: string | null = null;
 
   try {
+    recordJobStart(CONFIG.POOL_NAME, CONFIG.WORKER_NAME);
     // Update status to processing
     await submissionDb.updateStatus(job.submissionId, 'processing');
 
@@ -203,6 +228,7 @@ async function processJob(jobData: { id: string; job: ExecutionJob }): Promise<v
       codeFile,
       timeLimit: job.timeLimit || CONFIG.DEFAULT_TIMEOUT_MS,
       memoryLimit: job.memoryLimit || CONFIG.DEFAULT_MEMORY_MB * 1024,
+      testCases: job.testCases,
     });
 
     const executionTime = Date.now() - startTime;
@@ -216,27 +242,99 @@ async function processJob(jobData: { id: string; job: ExecutionJob }): Promise<v
         total_test_cases: result.testResults?.length || 0,
         score: calculateScore(result),
       });
-      console.log(`✅ Job completed: ${job.submissionId} (${executionTime}ms)`);
-    } else {
-      await submissionDb.updateStatus(job.submissionId, 'failed', {
-        execution_time_ms: result.executionTimeMs,
-        error_message: result.error,
+      logEvent('job_completed', {
+        submissionId: job.submissionId,
+        language: job.language,
+        executionTimeMs: executionTime,
+        attempts,
       });
-      console.log(`❌ Job failed: ${job.submissionId} - ${result.error}`);
+      recordJobCompletion(
+        CONFIG.POOL_NAME,
+        job.language,
+        executionTime / 1000,
+        'success',
+        result.memoryUsedKb || 0,
+        true
+      );
+    } else {
+      const willRetry = attempts < CONFIG.MAX_JOB_ATTEMPTS;
+
+      if (willRetry) {
+        logEvent('job_retry_scheduled', {
+          submissionId: job.submissionId,
+          nextAttempt: attempts + 1,
+          maxAttempts: CONFIG.MAX_JOB_ATTEMPTS,
+          error: result.error,
+        });
+        jobErrorsCounter.inc({ pool: CONFIG.POOL_NAME, language: job.language, error_type: 'retry' });
+        await submissionDb.updateStatus(job.submissionId, 'queued');
+        await scheduleRetry(job, attempts + 1);
+      } else {
+        await submissionDb.updateStatus(job.submissionId, 'failed', {
+          execution_time_ms: result.executionTimeMs,
+          error_message: result.error,
+        });
+        logEvent('job_failed', {
+          submissionId: job.submissionId,
+          language: job.language,
+          error: result.error,
+          attempts,
+        });
+        jobErrorsCounter.inc({ pool: CONFIG.POOL_NAME, language: job.language, error_type: 'retry_exhausted' });
+        await pushDeadLetter(job, result.error || 'unknown_error');
+      }
+
+      recordJobCompletion(
+        CONFIG.POOL_NAME,
+        job.language,
+        executionTime / 1000,
+        'failed',
+        result.memoryUsedKb || 0,
+        false
+      );
     }
 
     // Acknowledge job completion
     await ackJob(messageId, CONFIG.CONSUMER_GROUP);
 
   } catch (error: any) {
-    console.error(`💥 Job error: ${job.submissionId}`, error);
-
-    // Update status to failed
-    await submissionDb.updateStatus(job.submissionId, 'failed', {
-      error_message: error.message || 'Unknown error',
+    logEvent('job_error', {
+      submissionId: job.submissionId,
+      error: error.message || 'Unknown error',
+      attempts,
     });
 
-    // Still acknowledge to prevent retry loops (or implement retry logic)
+    const willRetry = attempts < CONFIG.MAX_JOB_ATTEMPTS;
+
+    if (willRetry) {
+      logEvent('job_retry_scheduled', {
+        submissionId: job.submissionId,
+        nextAttempt: attempts + 1,
+        maxAttempts: CONFIG.MAX_JOB_ATTEMPTS,
+        error: error.message,
+      });
+      jobErrorsCounter.inc({ pool: CONFIG.POOL_NAME, language: job.language, error_type: 'retry' });
+      await submissionDb.updateStatus(job.submissionId, 'queued');
+      await scheduleRetry(job, attempts + 1);
+    } else {
+      // Update status to failed
+      await submissionDb.updateStatus(job.submissionId, 'failed', {
+        error_message: error.message || 'Unknown error',
+      });
+      jobErrorsCounter.inc({ pool: CONFIG.POOL_NAME, language: job.language, error_type: 'retry_exhausted' });
+      await pushDeadLetter(job, error.message || 'unknown_error');
+    }
+
+    recordJobCompletion(
+      CONFIG.POOL_NAME,
+      job.language,
+      (Date.now() - startTime) / 1000,
+      'error',
+      0,
+      false
+    );
+
+    // Acknowledge regardless to avoid tight retry loops; requeue handles retries
     await ackJob(messageId, CONFIG.CONSUMER_GROUP);
 
   } finally {
@@ -244,6 +342,7 @@ async function processJob(jobData: { id: string; job: ExecutionJob }): Promise<v
     if (workspaceDir) {
       await cleanupWorkspace(workspaceDir);
     }
+    recordJobEnd(CONFIG.POOL_NAME, CONFIG.WORKER_NAME);
   }
 }
 
@@ -301,8 +400,9 @@ async function executeInContainer(options: {
   codeFile: string;
   timeLimit: number;
   memoryLimit: number;
+  testCases?: string;
 }): Promise<ExecutionResult> {
-  const { workspaceDir, language, codeFile, timeLimit, memoryLimit } = options;
+  const { workspaceDir, language, codeFile, timeLimit, memoryLimit, testCases } = options;
   const startTime = Date.now();
 
   let container: Docker.Container | null = null;
@@ -317,6 +417,7 @@ async function executeInContainer(options: {
         `CODE_FILE=${codeFile}`,
         `TIMEOUT_MS=${timeLimit}`,
         `MEMORY_LIMIT_KB=${memoryLimit}`,
+        ...(testCases ? [{ TEST_CASES: testCases }] : []),
       ],
       HostConfig: {
         // Mount workspace as /workspace
@@ -369,14 +470,18 @@ async function executeInContainer(options: {
     // Parse logs - Docker logs have 8-byte header per line
     const output = demuxDockerLogs(logs);
     
-    // Try to parse JSON result from stdout
+    // Try to parse JSON result from stdout using __RESULT__ prefix
     let result: ExecutionResult;
     
     try {
-      // Find JSON in output (runner outputs JSON to stdout)
-      const jsonMatch = output.stdout.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
+      const resultLine = output.stdout
+        .split('\n')
+        .map(line => line.trim())
+        .find(line => line.startsWith('__RESULT__'));
+
+      if (resultLine) {
+        const jsonPayload = resultLine.replace('__RESULT__', '');
+        const parsed = JSON.parse(jsonPayload);
         result = {
           success: parsed.success,
           output: parsed.output || '',
@@ -489,6 +594,160 @@ function calculateScore(result: ExecutionResult): number {
  */
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Schedule a retry with exponential backoff.
+ */
+async function scheduleRetry(job: ExecutionJob, nextAttempt: number): Promise<void> {
+  const backoff = Math.min(
+    CONFIG.RETRY_BACKOFF_BASE_MS * Math.pow(2, nextAttempt - 1),
+    CONFIG.RETRY_BACKOFF_MAX_MS
+  );
+
+  setTimeout(async () => {
+    try {
+      await pushJob({
+        ...job,
+        attempts: nextAttempt,
+        createdAt: job.createdAt || new Date().toISOString(),
+      });
+      logEvent('job_requeued', {
+        submissionId: job.submissionId,
+        attempt: nextAttempt,
+        backoffMs: backoff,
+      });
+    } catch (err) {
+      logEvent('job_requeue_failed', {
+        submissionId: job.submissionId,
+        attempt: nextAttempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }, backoff);
+}
+
+/**
+ * Basic config validation to fail fast on missing critical envs.
+ */
+function validateConfig(): void {
+  const missing: string[] = [];
+  if (!process.env.REDIS_URL) missing.push('REDIS_URL');
+  if (!process.env.POSTGRES_PASSWORD) missing.push('POSTGRES_PASSWORD');
+  if (!process.env.S3_BUCKET_NAME) missing.push('S3_BUCKET_NAME');
+  if (!process.env.AWS_ACCESS_KEY_ID) missing.push('AWS_ACCESS_KEY_ID');
+  if (!process.env.AWS_SECRET_ACCESS_KEY) missing.push('AWS_SECRET_ACCESS_KEY');
+  if (!existsSync(process.env.DOCKER_SOCKET || '/var/run/docker.sock')) missing.push('DOCKER_SOCKET');
+
+  if (!CONFIG.RUNNER_IMAGE) missing.push('RUNNER_IMAGE');
+
+  if (missing.length > 0) {
+    const allowIncomplete = process.env.ALLOW_INCOMPLETE_CONFIG === 'true' || process.env.NODE_ENV === 'development';
+    const message = `Missing required configuration: ${missing.join(', ')}`;
+    if (allowIncomplete) {
+      console.warn(`[config] ${message} (continuing because ALLOW_INCOMPLETE_CONFIG/NODE_ENV=development)`);
+    } else {
+      throw new Error(message);
+    }
+  }
+}
+
+/**
+ * Verify required DB schema exists.
+ */
+async function verifyDbSchema(): Promise<void> {
+  try {
+    await query('SELECT 1 FROM submissions LIMIT 1');
+  } catch (err) {
+    throw new Error(`Database schema check failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Simple health/readiness server.
+ */
+function startHealthServer(): void {
+  const server = http.createServer(async (req, res) => {
+    const path = req.url || '';
+    if (path.startsWith(CONFIG.HEALTH_PATH) || path.startsWith(CONFIG.READY_PATH)) {
+      const status = await getHealthStatus(path.startsWith(CONFIG.READY_PATH));
+      res.setHeader('Content-Type', 'application/json');
+      res.statusCode = status.ok ? 200 : 503;
+      res.end(JSON.stringify(status));
+      return;
+    }
+    res.statusCode = 404;
+    res.end();
+  });
+
+  server.listen(CONFIG.HEALTH_PORT, () => {
+    logEvent('health_server_started', {
+      port: CONFIG.HEALTH_PORT,
+      healthPath: CONFIG.HEALTH_PATH,
+      readyPath: CONFIG.READY_PATH,
+    });
+  });
+}
+
+async function getHealthStatus(includeReadiness: boolean) {
+  const details: Record<string, string> = {};
+  let ok = true;
+
+  // Redis
+  try {
+    const redis = await getRedisClient();
+    await redis.ping();
+    details.redis = 'ok';
+  } catch (err: any) {
+    ok = false;
+    details.redis = err.message || 'error';
+  }
+
+  // Docker
+  try {
+    await docker.ping();
+    details.docker = 'ok';
+  } catch (err: any) {
+    ok = false;
+    details.docker = err.message || 'error';
+  }
+
+  // Database
+  try {
+    await query('SELECT 1');
+    details.db = 'ok';
+  } catch (err: any) {
+    ok = false;
+    details.db = err.message || 'error';
+  }
+
+  // S3 (only for readiness)
+  if (includeReadiness) {
+    try {
+      const s3 = getS3Client();
+      // Accessing config triggers validation; a simple call to get config values
+      await s3.config.credentials();
+      details.s3 = 'ok';
+    } catch (err: any) {
+      ok = false;
+      details.s3 = err.message || 'error';
+    }
+  }
+
+  return { ok, details };
+}
+
+/**
+ * Structured log helper.
+ */
+function logEvent(event: string, data: Record<string, any> = {}): void {
+  const payload = {
+    event,
+    ts: new Date().toISOString(),
+    worker: CONFIG.WORKER_NAME,
+    ...data,
+  };
+  console.log(JSON.stringify(payload));
 }
 
 /**

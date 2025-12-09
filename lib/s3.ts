@@ -2,7 +2,7 @@
  * S3 (AWS or MinIO) Client for storing code submissions
  */
 
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 
 let s3Client: S3Client | null = null;
@@ -106,6 +106,25 @@ export async function downloadCode(s3Key: string): Promise<string> {
   } catch (error) {
     console.error('S3 download error:', error);
     throw new Error('Failed to download code from storage');
+  }
+}
+
+/**
+ * Delete code object from S3
+ */
+export async function deleteCode(s3Key: string): Promise<void> {
+  const client = getS3Client();
+
+  try {
+    const command = new DeleteObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: s3Key,
+    });
+
+    await client.send(command);
+  } catch (error) {
+    console.error(`S3 delete error for key ${s3Key}:`, error);
+    // Best-effort cleanup; do not throw to avoid masking original errors
   }
 }
 
