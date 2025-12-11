@@ -175,10 +175,26 @@ const Editor = forwardRef<EditorRef, EditorProps>(({ code, language, onChange, t
     }
   };
 
+  // Map our language names to Monaco Editor language IDs
+  const monacoLanguageMap: Record<string, string> = {
+    javascript: 'javascript',
+    typescript: 'typescript',
+    python: 'python',
+    java: 'java',
+    cpp: 'cpp',
+    c: 'c',
+    go: 'go',
+    rust: 'rust',
+    ruby: 'ruby',
+    php: 'php',
+  };
+
+  const monacoLanguage = monacoLanguageMap[language] || 'javascript';
+
   return (
     <MonacoEditor
       height="100%"
-      language={language}
+      language={monacoLanguage}
       value={code}
       onChange={handleEditorChange}
       theme={theme}

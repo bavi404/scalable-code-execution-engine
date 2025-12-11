@@ -25,7 +25,7 @@ git push origin main
    Add these one by one:
    
    ```
-   POSTGRES_HOST = db.wjoosfdttllcyikqnvsp.supabase.co
+ POSTGRES_HOST   = db.wjoosfdttllcyikqnvsp.supabase.co
    POSTGRES_PORT = 5432
    POSTGRES_DB = postgres
    POSTGRES_USER = postgres

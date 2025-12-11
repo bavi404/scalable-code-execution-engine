@@ -19,17 +19,37 @@ export default function Home() {
   const [outputWidth, setOutputWidth] = useState(360);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  // Mock file list
+  // Supported languages with templates
+  const languageTemplates: Record<string, string> = {
+    javascript: '// Write your code here\nconsole.log("Hello, World!");',
+    typescript: '// Write your code here\nconsole.log("Hello, World!");',
+    python: '# Write your code here\nprint("Hello, World!")',
+    java: 'public class Solution {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}',
+    cpp: '#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}',
+    c: '#include <stdio.h>\n\nint main() {\n    printf("Hello, World!\\n");\n    return 0;\n}',
+    go: 'package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello, World!")\n}',
+    rust: 'fn main() {\n    println!("Hello, World!");\n}',
+    ruby: '# Write your code here\nputs "Hello, World!"',
+    php: '<?php\n// Write your code here\necho "Hello, World!\\n";\n?>',
+  };
+
   const files = [
     { name: 'solution.js', language: 'javascript' },
     { name: 'solution.py', language: 'python' },
     { name: 'solution.ts', language: 'typescript' },
+    { name: 'Solution.java', language: 'java' },
+    { name: 'solution.cpp', language: 'cpp' },
+    { name: 'solution.c', language: 'c' },
+    { name: 'solution.go', language: 'go' },
+    { name: 'solution.rs', language: 'rust' },
+    { name: 'solution.rb', language: 'ruby' },
+    { name: 'solution.php', language: 'php' },
   ];
 
   const handleFileSelect = (file: { name: string; language: string }) => {
     setSelectedFile(file.name);
     setLanguage(file.language);
-    setCode(`// ${file.name}\n// Write your code here`);
+    setCode(languageTemplates[file.language] || `// ${file.name}\n// Write your code here`);
     setOutput([]);
   };
 
