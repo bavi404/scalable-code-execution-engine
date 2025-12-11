@@ -1,0 +1,31 @@
+# Worker Service Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install Docker CLI (for dockerode)
+RUN apk add --no-cache docker-cli curl
+
+# Copy package files
+COPY package.json package-lock.json* ./
+RUN npm ci --only=production
+
+# Copy worker source
+COPY tsconfig.json ./
+COPY lib ./lib
+COPY workers ./workers
+COPY monitoring ./monitoring
+
+# Install TypeScript and ts-node for runtime
+RUN npm install -g typescript ts-node
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:${HEALTH_PORT:-8080}/health || exit 1
+
+EXPOSE ${HEALTH_PORT:-8080}
+
+CMD ["ts-node", "workers/executor.ts"]
+
+
+

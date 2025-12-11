@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import Editor, { EditorRef, ExecutionOutput } from '../components/Editor';
 import OutputPanel from '../components/OutputPanel';
 
@@ -9,6 +9,15 @@ export default function Home() {
   const [language, setLanguage] = useState('javascript');
   const [output, setOutput] = useState<string[]>([]);
   const [problemId, setProblemId] = useState('problem-1');
+  const [submissionResponse, setSubmissionResponse] = useState<any>(null);
+  const [statusText, setStatusText] = useState<string | undefined>(undefined);
+  const [history, setHistory] = useState<
+    Array<{ id: string; status: string; timestamp: string; response?: any }>
+  >([]);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [sidebarWidth, setSidebarWidth] = useState(220);
+  const [outputWidth, setOutputWidth] = useState(360);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // Mock file list
   const files = [
@@ -30,6 +39,7 @@ export default function Home() {
       return;
     }
 
+    setStatusText('Running quick execute...');
     setOutput(['Running...']);
     
     editorRef.current.executeCode((result: ExecutionOutput) => {
@@ -62,10 +72,12 @@ export default function Home() {
       }
 
       setOutput(formattedOutput.length > 0 ? formattedOutput : ['No output']);
+      setStatusText(result.type === 'success' ? 'Execution finished' : 'Execution error/timeout');
     });
   };
 
   const handleSubmit = async () => {
+    setStatusText('Submitting...');
     setOutput(['Submitting...']);
     
     try {
@@ -82,19 +94,74 @@ export default function Home() {
       });
 
       const data = await response.json();
+      setSubmissionResponse(data);
+      setHistory((prev) => [
+        {
+          id: data.submissionId || `pending-${Date.now()}`,
+          status: response.ok ? 'queued' : 'failed',
+          timestamp: new Date().toISOString(),
+          response: data,
+        },
+        ...prev,
+      ].slice(0, 10));
       setOutput([
         `Status: ${response.status}`,
         `Response: ${JSON.stringify(data, null, 2)}`,
       ]);
+      setStatusText(response.ok ? 'Submission queued' : 'Submission failed');
+      setToast({
+        message: response.ok ? 'Submission queued' : 'Submission failed',
+        type: response.ok ? 'success' : 'error',
+      });
     } catch (error) {
       setOutput([`Error: ${error instanceof Error ? error.message : 'Unknown error'}`]);
+      setStatusText('Submission failed');
+      setToast({ message: 'Submission failed', type: 'error' });
     }
   };
 
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const onSelectHistory = (itemId: string) => {
+    const hit = history.find((h) => h.id === itemId);
+    if (hit?.response) {
+      setSubmissionResponse(hit.response);
+      setStatusText(`Selected submission ${itemId}`);
+      setToast({ message: `Loaded submission ${itemId}`, type: 'info' });
+    }
+  };
+
+  const startResize = (which: 'sidebar' | 'output', clientX: number) => {
+    const startX = clientX;
+    const startSidebar = sidebarWidth;
+    const startOutput = outputWidth;
+    const onMove = (e: MouseEvent) => {
+      if (which === 'sidebar') {
+        const next = Math.min(360, Math.max(160, startSidebar + (e.clientX - startX)));
+        setSidebarWidth(next);
+      } else {
+        const delta = startX - e.clientX;
+        const next = Math.min(420, Math.max(280, startOutput + delta));
+        setOutputWidth(next);
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const headerBg = theme === 'dark' ? '#1e1e1e' : '#f5f5f5';
+  const headerColor = theme === 'dark' ? '#fff' : '#333';
+
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif', background: theme === 'dark' ? '#111' : '#fafafa', position: 'relative' }}>
       {/* Left Panel - File List */}
-      <div style={{ width: '200px', borderRight: '1px solid #ddd', padding: '10px', backgroundColor: '#f5f5f5' }}>
+      <div style={{ width: `${sidebarWidth}px`, borderRight: '1px solid #ddd', padding: '10px', backgroundColor: theme === 'dark' ? '#181818' : '#f5f5f5', color: headerColor, boxSizing: 'border-box' }}>
         <h3 style={{ margin: '0 0 15px 0', fontSize: '14px' }}>Files</h3>
         <div style={{ marginBottom: '15px' }}>
           <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px' }}>Problem ID:</label>
@@ -129,22 +196,75 @@ export default function Home() {
           </div>
         ))}
       </div>
+      <div
+        style={{ width: '6px', cursor: 'col-resize', background: 'transparent' }}
+        onMouseDown={(e) => startResize('sidebar', e.clientX)}
+      />
 
       {/* Center Panel - Monaco Editor */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '10px', borderBottom: '1px solid #ddd', backgroundColor: '#f5f5f5' }}>
-          <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{selectedFile}</span>
-          <span style={{ marginLeft: '10px', fontSize: '12px', color: '#666' }}>({language})</span>
+        <div style={{ padding: '10px', borderBottom: '1px solid #ddd', backgroundColor: headerBg, color: headerColor, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{selectedFile}</span>
+            <span style={{ marginLeft: '10px', fontSize: '12px', color: headerColor === '#fff' ? '#ccc' : '#666' }}>({language})</span>
+          </div>
+          <div style={{ fontSize: '12px', color: headerColor === '#fff' ? '#ccc' : '#666' }}>
+            {statusText || 'Idle'}
+          </div>
         </div>
-        <Editor ref={editorRef} code={code} language={language} onChange={setCode} />
+        <Editor ref={editorRef} code={code} language={language} onChange={setCode} theme={theme === 'dark' ? 'vs-dark' : 'vs'} />
       </div>
+
+      <div
+        style={{ width: '6px', cursor: 'col-resize', background: 'transparent' }}
+        onMouseDown={(e) => startResize('output', e.clientX)}
+      />
 
       {/* Right Panel - Output */}
       <OutputPanel 
         output={output} 
+        submissionResponse={submissionResponse}
+        history={history}
+        statusText={statusText}
+        onToggleTheme={toggleTheme}
+        theme={theme}
+        onSelectHistory={onSelectHistory}
+        width={outputWidth}
         onQuickRun={handleQuickRun}
         onSubmit={handleSubmit}
       />
+
+      {/* Toast */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            padding: '12px 14px',
+            background: toast.type === 'success' ? '#28a745' : toast.type === 'error' ? '#c0392b' : '#444',
+            color: '#fff',
+            borderRadius: '6px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+            fontSize: '13px',
+          }}
+        >
+          {toast.message}
+          <button
+            onClick={() => setToast(null)}
+            style={{
+              marginLeft: '10px',
+              background: 'transparent',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '13px',
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }

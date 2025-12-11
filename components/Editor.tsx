@@ -5,6 +5,7 @@ interface EditorProps {
   code: string;
   language: string;
   onChange: (value: string) => void;
+  theme?: 'vs-dark' | 'vs-light';
 }
 
 export interface EditorRef {
@@ -26,7 +27,7 @@ export interface LogEntry {
 
 const WORKER_TIMEOUT = 2500; // Main thread timeout (slightly longer than worker's internal timeout)
 
-const Editor = forwardRef<EditorRef, EditorProps>(({ code, language, onChange }, ref) => {
+const Editor = forwardRef<EditorRef, EditorProps>(({ code, language, onChange, theme = 'vs-dark' }, ref) => {
   const workerRef = useRef<Worker | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const executionIdRef = useRef(0);
@@ -180,7 +181,7 @@ const Editor = forwardRef<EditorRef, EditorProps>(({ code, language, onChange },
       language={language}
       value={code}
       onChange={handleEditorChange}
-      theme="vs-dark"
+      theme={theme}
       options={{
         minimap: { enabled: false },
         fontSize: 14,

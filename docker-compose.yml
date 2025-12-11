@@ -1,0 +1,198 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    container_name: code-exec-postgres
+    environment:
+      POSTGRES_DB: code_execution
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - code-exec-network
+
+  # Redis Queue
+  redis:
+    image: redis:7-alpine
+    container_name: code-exec-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - code-exec-network
+
+  # MinIO (S3-compatible storage)
+  minio:
+    image: minio/minio:latest
+    container_name: code-exec-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - code-exec-network
+
+  # MinIO Client (for bucket setup)
+  minio-setup:
+    image: minio/mc:latest
+    container_name: code-exec-minio-setup
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      mc mb myminio/code-submissions --ignore-existing;
+      mc anonymous set download myminio/code-submissions;
+      echo 'MinIO bucket created successfully';
+      "
+    networks:
+      - code-exec-network
+
+  # Code Runner Image Builder
+  runner-builder:
+    build:
+      context: ./runner
+      dockerfile: Dockerfile
+    image: code-runner:latest
+    container_name: code-exec-runner-builder
+    # Just build, don't run
+
+  # Next.js Web Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: code-exec-web
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: code_execution
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      
+      # Redis
+      REDIS_URL: redis://redis:6379
+      REDIS_STREAM_KEY: code-execution-jobs
+      
+      # S3/MinIO
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET_NAME: code-submissions
+      AWS_REGION: us-east-1
+      
+      # Node
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - code-exec-network
+    restart: unless-stopped
+
+  # Worker Service
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: code-exec-worker
+    environment:
+      # Worker config
+      WORKER_NAME: worker-${HOSTNAME:-1}
+      CONSUMER_GROUP: execution-workers
+      STREAM_KEY: code-execution-jobs
+      RUNNER_IMAGE: code-runner:latest
+      POLL_INTERVAL_MS: 1000
+      MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-4}
+      DEFAULT_TIMEOUT_MS: 5000
+      DEFAULT_MEMORY_MB: 256
+      POOL_NAME: container
+      
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: code_execution
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      
+      # Redis
+      REDIS_URL: redis://redis:6379
+      
+      # S3/MinIO
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET_NAME: code-submissions
+      AWS_REGION: us-east-1
+      
+      # Docker (for running code)
+      DOCKER_SOCKET: /var/run/docker.sock
+      
+      # Health check
+      HEALTH_PORT: 8080
+      
+      # Node
+      NODE_ENV: production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /tmp:/tmp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      runner-builder:
+        condition: service_completed_successfully
+    networks:
+      - code-exec-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  code-exec-network:
+    driver: bridge
+
+
+

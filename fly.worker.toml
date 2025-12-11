@@ -1,0 +1,36 @@
+# Fly.io configuration for worker service
+# Run: fly launch --config fly.worker.toml --name code-exec-worker
+
+app = "code-exec-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[env]
+  NODE_ENV = "production"
+  HEALTH_PORT = "8080"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  processes = ["app"]
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+# Enable Docker socket access (required for worker)
+[mounts]
+  source = "docker_sock"
+  destination = "/var/run/docker.sock"
+
+
+
