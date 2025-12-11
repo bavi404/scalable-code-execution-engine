@@ -212,7 +212,7 @@ export default function Home() {
             {statusText || 'Idle'}
           </div>
         </div>
-        <Editor ref={editorRef} code={code} language={language} onChange={setCode} theme={theme === 'dark' ? 'vs-dark' : 'vs'} />
+        <Editor ref={editorRef} code={code} language={language} onChange={setCode} theme={theme === 'dark' ? 'vs-dark' : 'vs-light'} />
       </div>
 
       <div

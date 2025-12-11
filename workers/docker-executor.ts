@@ -487,8 +487,8 @@ exit 0
     tag: string
   ): Promise<void> {
     const stream = await docker.buildImage(
-      { context: path.dirname(dockerfilePath) },
-      { t: tag }
+      path.dirname(dockerfilePath),
+      { t: tag, dockerfile: path.basename(dockerfilePath) }
     );
 
     // Wait for build to complete

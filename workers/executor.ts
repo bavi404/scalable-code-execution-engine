@@ -409,7 +409,7 @@ async function executeInContainer(options: {
 
   try {
     // Create container
-    container = await docker.createContainer({
+    const createdContainer = await docker.createContainer({
       Image: CONFIG.RUNNER_IMAGE,
       Cmd: ['node', '/runner/runner.js'],
       Env: [
@@ -417,7 +417,7 @@ async function executeInContainer(options: {
         `CODE_FILE=${codeFile}`,
         `TIMEOUT_MS=${timeLimit}`,
         `MEMORY_LIMIT_KB=${memoryLimit}`,
-        ...(testCases ? [{ TEST_CASES: testCases }] : []),
+        ...(testCases ? [`TEST_CASES=${testCases}`] : []),
       ],
       HostConfig: {
         // Mount workspace as /workspace
@@ -448,6 +448,7 @@ async function executeInContainer(options: {
       // Timeout for container (slightly longer than code timeout)
       StopTimeout: Math.ceil(timeLimit / 1000) + 5,
     });
+    container = createdContainer;
 
     // Start container
     await container.start();

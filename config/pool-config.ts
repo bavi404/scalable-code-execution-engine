@@ -143,9 +143,12 @@ export function selectPool(requirements: SubmissionRequirements): string {
       if (cpuCores > pool.maxCpuCores) return false;
       if (timeoutSec > pool.maxTimeoutSec) return false;
       
-      // Don't use trusted pool for standard users
-      if (pool.name === 'trusted' && trustLevel !== 'verified' && trustLevel !== 'admin') {
-        return false;
+      // Don't use trusted pool for standard users or undefined trust level
+      if (pool.name === 'trusted') {
+        if (trustLevel === undefined || trustLevel === 'standard') {
+          return false;
+        }
+        // Only verified and admin can use trusted pool (already checked above)
       }
       
       return true;
