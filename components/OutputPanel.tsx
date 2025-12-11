@@ -20,21 +20,6 @@ interface OutputPanelProps {
   width?: number;
 }
 
-const tabStyles = {
-  base: {
-    padding: '8px 10px',
-    cursor: 'pointer',
-    borderBottom: '2px solid transparent',
-    fontSize: '13px',
-    background: 'transparent',
-  },
-  active: {
-    borderBottomColor: '#007acc',
-    color: '#007acc',
-    fontWeight: 'bold',
-  },
-};
-
 export default function OutputPanel({
   output,
   submissionResponse,
@@ -45,86 +30,214 @@ export default function OutputPanel({
   onToggleTheme,
   theme,
   onSelectHistory,
-  width = 340,
+  width = 380,
 }: OutputPanelProps) {
   const [activeTab, setActiveTab] = useState<'console' | 'response' | 'history'>('console');
+  const isDark = theme === 'dark';
+  const bgPrimary = isDark ? '#1e1e1e' : '#ffffff';
+  const bgSecondary = isDark ? '#252526' : '#f3f3f3';
+  const bgTertiary = isDark ? '#2d2d30' : '#e8e8e8';
+  const textPrimary = isDark ? '#cccccc' : '#333333';
+  const textSecondary = isDark ? '#858585' : '#666666';
+  const borderColor = isDark ? '#3e3e42' : '#d4d4d4';
+  const accentColor = '#007acc';
 
   const renderConsole = () => (
-    <div style={{ fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'pre-wrap' }}>
+    <div style={{ 
+      fontFamily: '"Fira Code", "Consolas", "Monaco", monospace', 
+      fontSize: '13px', 
+      whiteSpace: 'pre-wrap',
+      lineHeight: '1.6',
+      color: textPrimary
+    }}>
       {output.length === 0 ? (
-        <div style={{ color: '#888' }}>No output yet. Click "Run (Quick)" to execute JavaScript code.</div>
+        <div style={{ 
+          color: textSecondary,
+          padding: '20px',
+          textAlign: 'center',
+          fontSize: '12px'
+        }}>
+          No output yet. Click "Run" to execute JavaScript/TypeScript code locally.
+        </div>
       ) : (
-        output.map((line, index) => (
-          <div
-            key={index}
-            style={{
-              marginBottom: '5px',
-              color:
-                line.includes('[error]') || line.toLowerCase().includes('error') ? '#f48771' :
-                line.toLowerCase().includes('warn') ? '#dcdcaa' : '#d4d4d4',
-            }}
-          >
-            {line}
-          </div>
-        ))
+        output.map((line, index) => {
+          const isError = line.toLowerCase().includes('error') || line.includes('❌');
+          const isWarning = line.toLowerCase().includes('warn') || line.includes('⚠️');
+          const isSuccess = line.includes('✓') || line.toLowerCase().includes('success');
+          
+          return (
+            <div
+              key={index}
+              style={{
+                padding: '4px 0',
+                color: isError ? '#f48771' : isWarning ? '#dcdcaa' : isSuccess ? '#4ec9b0' : textPrimary,
+                fontFamily: 'inherit',
+              }}
+            >
+              {line}
+            </div>
+          );
+        })
       )}
     </div>
   );
 
   const renderResponse = () => (
-    <div style={{ fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'pre-wrap' }}>
+    <div style={{ 
+      fontFamily: '"Fira Code", "Consolas", "Monaco", monospace', 
+      fontSize: '12px', 
+      whiteSpace: 'pre-wrap',
+      color: textPrimary,
+      lineHeight: '1.6'
+    }}>
       {submissionResponse ? (
-        JSON.stringify(submissionResponse, null, 2)
+        <div style={{
+          background: bgSecondary,
+          padding: '12px',
+          borderRadius: '6px',
+          border: `1px solid ${borderColor}`
+        }}>
+          <pre style={{ margin: 0, color: textPrimary }}>
+            {JSON.stringify(submissionResponse, null, 2)}
+          </pre>
+        </div>
       ) : (
-        <div style={{ color: '#888' }}>No submission yet.</div>
+        <div style={{ 
+          color: textSecondary,
+          padding: '20px',
+          textAlign: 'center',
+          fontSize: '12px'
+        }}>
+          No submission response yet. Submit your code to see the result.
+        </div>
       )}
     </div>
   );
 
   const renderHistory = () => (
-    <div style={{ fontSize: '12px' }}>
+    <div style={{ fontSize: '13px' }}>
       {history.length === 0 ? (
-        <div style={{ color: '#888' }}>No submissions yet.</div>
+        <div style={{ 
+          color: textSecondary,
+          padding: '20px',
+          textAlign: 'center',
+          fontSize: '12px'
+        }}>
+          No submission history yet.
+        </div>
       ) : (
-        history.map((item) => (
-          <div
-            key={item.id}
-            style={{
-              padding: '8px',
-              border: '1px solid #333',
-              borderRadius: '4px',
-              marginBottom: '8px',
-              background: '#111',
-              color: '#eaeaea',
-              cursor: onSelectHistory ? 'pointer' : 'default',
-            }}
-            onClick={() => onSelectHistory?.(item.id)}
-          >
-            <div style={{ fontWeight: 'bold' }}>{item.id}</div>
-            <div>Status: {item.status}</div>
-            <div style={{ color: '#999' }}>{item.timestamp}</div>
-          </div>
-        ))
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {history.map((item) => {
+            const statusColor = item.status === 'queued' ? '#3b82f6' : 
+                               item.status === 'failed' ? '#ef4444' : 
+                               item.status === 'completed' ? '#10b981' : textSecondary;
+            return (
+              <div
+                key={item.id}
+                style={{
+                  padding: '12px',
+                  border: `1px solid ${borderColor}`,
+                  borderRadius: '6px',
+                  background: bgSecondary,
+                  color: textPrimary,
+                  cursor: onSelectHistory ? 'pointer' : 'default',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => onSelectHistory?.(item.id)}
+                onMouseEnter={(e) => {
+                  if (onSelectHistory) {
+                    e.currentTarget.style.background = bgTertiary;
+                    e.currentTarget.style.borderColor = accentColor;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (onSelectHistory) {
+                    e.currentTarget.style.background = bgSecondary;
+                    e.currentTarget.style.borderColor = borderColor;
+                  }
+                }}
+              >
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '6px'
+                }}>
+                  <div style={{ 
+                    fontWeight: '600',
+                    fontSize: '12px',
+                    fontFamily: 'monospace',
+                    color: textPrimary
+                  }}>
+                    {item.id.slice(0, 8)}...
+                  </div>
+                  <div style={{
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    background: statusColor + '20',
+                    color: statusColor,
+                    fontSize: '10px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase'
+                  }}>
+                    {item.status}
+                  </div>
+                </div>
+                <div style={{ 
+                  fontSize: '11px', 
+                  color: textSecondary,
+                  fontFamily: 'monospace'
+                }}>
+                  {new Date(item.timestamp).toLocaleString()}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
 
   return (
-    <div style={{ width: `${width}px`, borderLeft: '1px solid #ddd', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ 
+      width: `${width}px`, 
+      borderLeft: `1px solid ${borderColor}`, 
+      display: 'flex', 
+      flexDirection: 'column',
+      backgroundColor: bgPrimary,
+      color: textPrimary
+    }}>
       {/* Toolbar */}
-      <div style={{ padding: '12px', borderBottom: '1px solid #ddd', backgroundColor: '#f5f5f5', display: 'flex', gap: '8px' }}>
+      <div style={{ 
+        padding: '12px', 
+        borderBottom: `1px solid ${borderColor}`, 
+        backgroundColor: bgSecondary,
+        display: 'flex', 
+        gap: '8px',
+        boxShadow: isDark ? '0 2px 4px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)'
+      }}>
         <button
           onClick={onQuickRun}
           style={{
             flex: 1,
-            padding: '10px',
-            backgroundColor: '#28a745',
+            padding: '10px 14px',
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
             color: 'white',
             border: 'none',
-            borderRadius: '4px',
+            borderRadius: '6px',
             cursor: 'pointer',
             fontSize: '13px',
-            fontWeight: 'bold',
+            fontWeight: '600',
+            transition: 'all 0.2s',
+            boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow = '0 4px 8px rgba(16, 185, 129, 0.4)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 2px 4px rgba(16, 185, 129, 0.3)';
           }}
         >
           ▶ Run
@@ -133,14 +246,24 @@ export default function OutputPanel({
           onClick={onSubmit}
           style={{
             flex: 1,
-            padding: '10px',
-            backgroundColor: '#007acc',
+            padding: '10px 14px',
+            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
             color: 'white',
             border: 'none',
-            borderRadius: '4px',
+            borderRadius: '6px',
             cursor: 'pointer',
             fontSize: '13px',
-            fontWeight: 'bold',
+            fontWeight: '600',
+            transition: 'all 0.2s',
+            boxShadow: '0 2px 4px rgba(59, 130, 246, 0.3)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow = '0 4px 8px rgba(59, 130, 246, 0.4)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 2px 4px rgba(59, 130, 246, 0.3)';
           }}
         >
           ✓ Submit
@@ -150,12 +273,19 @@ export default function OutputPanel({
           style={{
             width: '44px',
             padding: '10px',
-            backgroundColor: '#444',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
+            background: bgTertiary,
+            color: textPrimary,
+            border: `1px solid ${borderColor}`,
+            borderRadius: '6px',
             cursor: 'pointer',
-            fontSize: '13px',
+            fontSize: '16px',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = isDark ? '#3e3e42' : '#d4d4d4';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = bgTertiary;
           }}
         >
           {theme === 'dark' ? '☀️' : '🌙'}
@@ -164,29 +294,76 @@ export default function OutputPanel({
 
       {/* Status bar */}
       {statusText && (
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid #ddd', background: '#fffbe6', color: '#8c6d1f', fontSize: '12px' }}>
-          {statusText}
+        <div style={{ 
+          padding: '10px 14px', 
+          borderBottom: `1px solid ${borderColor}`, 
+          background: isDark ? '#2d2d30' : '#fffbe6',
+          color: isDark ? '#dcdcaa' : '#8c6d1f',
+          fontSize: '12px',
+          fontWeight: '500',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span>●</span>
+          <span>{statusText}</span>
         </div>
       )}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '8px', padding: '10px', borderBottom: '1px solid #333', background: '#1e1e1e', color: '#d4d4d4' }}>
-        {(['console', 'response', 'history'] as const).map((tab) => (
-          <div
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              ...tabStyles.base,
-              ...(activeTab === tab ? tabStyles.active : {}),
-            }}
-          >
-            {tab === 'console' ? 'Console' : tab === 'response' ? 'Submission' : 'History'}
-          </div>
-        ))}
+      <div style={{ 
+        display: 'flex', 
+        gap: '4px', 
+        padding: '8px',
+        borderBottom: `1px solid ${borderColor}`, 
+        background: bgSecondary
+      }}>
+        {(['console', 'response', 'history'] as const).map((tab) => {
+          const isActive = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                cursor: 'pointer',
+                border: 'none',
+                background: isActive ? bgPrimary : 'transparent',
+                color: isActive ? accentColor : textSecondary,
+                fontSize: '12px',
+                fontWeight: isActive ? '600' : '500',
+                borderRadius: '4px',
+                transition: 'all 0.2s',
+                borderBottom: isActive ? `2px solid ${accentColor}` : '2px solid transparent',
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.background = bgTertiary;
+                  e.currentTarget.style.color = textPrimary;
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = textSecondary;
+                }
+              }}
+            >
+              {tab === 'console' ? 'Console' : tab === 'response' ? 'Submission' : 'History'}
+            </button>
+          );
+        })}
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, padding: '12px', backgroundColor: '#1e1e1e', color: '#d4d4d4', overflow: 'auto' }}>
+      <div style={{ 
+        flex: 1, 
+        padding: '16px', 
+        backgroundColor: bgPrimary,
+        color: textPrimary,
+        overflow: 'auto'
+      }}>
         {activeTab === 'console' && renderConsole()}
         {activeTab === 'response' && renderResponse()}
         {activeTab === 'history' && renderHistory()}
@@ -194,4 +371,3 @@ export default function OutputPanel({
     </div>
   );
 }
-

@@ -2,6 +2,20 @@ import { useState, useRef, useMemo } from 'react';
 import Editor, { EditorRef, ExecutionOutput } from '../components/Editor';
 import OutputPanel from '../components/OutputPanel';
 
+// Language icons/colors
+const languageInfo: Record<string, { icon: string; color: string }> = {
+  javascript: { icon: '🟨', color: '#f7df1e' },
+  typescript: { icon: '🔵', color: '#3178c6' },
+  python: { icon: '🐍', color: '#3776ab' },
+  java: { icon: '☕', color: '#ed8b00' },
+  cpp: { icon: '⚙️', color: '#00599c' },
+  c: { icon: '⚙️', color: '#a8b9cc' },
+  go: { icon: '🐹', color: '#00add8' },
+  rust: { icon: '🦀', color: '#000000' },
+  ruby: { icon: '💎', color: '#cc342d' },
+  php: { icon: '🐘', color: '#777bb4' },
+};
+
 export default function Home() {
   const editorRef = useRef<EditorRef>(null);
   const [selectedFile, setSelectedFile] = useState('solution.js');
@@ -15,8 +29,8 @@ export default function Home() {
     Array<{ id: string; status: string; timestamp: string; response?: any }>
   >([]);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [sidebarWidth, setSidebarWidth] = useState(220);
-  const [outputWidth, setOutputWidth] = useState(360);
+  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [outputWidth, setOutputWidth] = useState(380);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // Supported languages with templates
@@ -80,7 +94,7 @@ export default function Home() {
 
       // Add console logs
       if (result.logs && result.logs.length > 0) {
-        formattedOutput.push(''); // Empty line
+        formattedOutput.push('');
         formattedOutput.push('--- Console Output ---');
         result.logs.forEach(log => {
           const prefix = log.type === 'error' ? '❌' : 
@@ -130,13 +144,13 @@ export default function Home() {
       ]);
       setStatusText(response.ok ? 'Submission queued' : 'Submission failed');
       setToast({
-        message: response.ok ? 'Submission queued' : 'Submission failed',
+        message: response.ok ? '✓ Submission queued successfully!' : '✗ Submission failed',
         type: response.ok ? 'success' : 'error',
       });
     } catch (error) {
       setOutput([`Error: ${error instanceof Error ? error.message : 'Unknown error'}`]);
       setStatusText('Submission failed');
-      setToast({ message: 'Submission failed', type: 'error' });
+      setToast({ message: '✗ Submission failed', type: 'error' });
     }
   };
 
@@ -159,11 +173,11 @@ export default function Home() {
     const startOutput = outputWidth;
     const onMove = (e: MouseEvent) => {
       if (which === 'sidebar') {
-        const next = Math.min(360, Math.max(160, startSidebar + (e.clientX - startX)));
+        const next = Math.min(360, Math.max(180, startSidebar + (e.clientX - startX)));
         setSidebarWidth(next);
       } else {
         const delta = startX - e.clientX;
-        const next = Math.min(420, Math.max(280, startOutput + delta));
+        const next = Math.min(500, Math.max(300, startOutput + delta));
         setOutputWidth(next);
       }
     };
@@ -175,69 +189,204 @@ export default function Home() {
     window.addEventListener('mouseup', onUp);
   };
 
-  const headerBg = theme === 'dark' ? '#1e1e1e' : '#f5f5f5';
-  const headerColor = theme === 'dark' ? '#fff' : '#333';
+  const isDark = theme === 'dark';
+  const bgPrimary = isDark ? '#1e1e1e' : '#ffffff';
+  const bgSecondary = isDark ? '#252526' : '#f3f3f3';
+  const bgTertiary = isDark ? '#2d2d30' : '#e8e8e8';
+  const textPrimary = isDark ? '#cccccc' : '#333333';
+  const textSecondary = isDark ? '#858585' : '#666666';
+  const borderColor = isDark ? '#3e3e42' : '#d4d4d4';
+  const accentColor = '#007acc';
+  const langInfo = languageInfo[language] || { icon: '📄', color: '#858585' };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif', background: theme === 'dark' ? '#111' : '#fafafa', position: 'relative' }}>
+    <div style={{ 
+      display: 'flex', 
+      height: '100vh', 
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      background: isDark ? '#1e1e1e' : '#fafafa',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
       {/* Left Panel - File List */}
-      <div style={{ width: `${sidebarWidth}px`, borderRight: '1px solid #ddd', padding: '10px', backgroundColor: theme === 'dark' ? '#181818' : '#f5f5f5', color: headerColor, boxSizing: 'border-box' }}>
-        <h3 style={{ margin: '0 0 15px 0', fontSize: '14px' }}>Files</h3>
-        <div style={{ marginBottom: '15px' }}>
-          <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px' }}>Problem ID:</label>
-          <input
-            type="text"
-            value={problemId}
-            onChange={(e) => setProblemId(e.target.value)}
-            style={{ 
-              width: '100%', 
-              padding: '5px', 
-              fontSize: '12px',
-              border: '1px solid #ddd',
-              borderRadius: '3px'
-            }}
-          />
-        </div>
-        {files.map((file) => (
-          <div
-            key={file.name}
-            onClick={() => handleFileSelect(file)}
-            style={{
-              padding: '8px',
-              cursor: 'pointer',
-              backgroundColor: selectedFile === file.name ? '#007acc' : 'transparent',
-              color: selectedFile === file.name ? 'white' : 'black',
-              borderRadius: '3px',
-              marginBottom: '5px',
-              fontSize: '13px',
-            }}
-          >
-            {file.name}
+      <div style={{ 
+        width: `${sidebarWidth}px`, 
+        borderRight: `1px solid ${borderColor}`, 
+        backgroundColor: bgSecondary,
+        color: textPrimary,
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}>
+        <div style={{ padding: '16px', borderBottom: `1px solid ${borderColor}` }}>
+          <h2 style={{ 
+            margin: '0 0 16px 0', 
+            fontSize: '16px', 
+            fontWeight: '600',
+            color: textPrimary
+          }}>
+            Code Execution Engine
+          </h2>
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ 
+              display: 'block', 
+              fontSize: '11px', 
+              marginBottom: '6px',
+              color: textSecondary,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontWeight: '600'
+            }}>
+              Problem ID
+            </label>
+            <input
+              type="text"
+              value={problemId}
+              onChange={(e) => setProblemId(e.target.value)}
+              style={{ 
+                width: '100%', 
+                padding: '8px 10px', 
+                fontSize: '13px',
+                border: `1px solid ${borderColor}`,
+                borderRadius: '4px',
+                background: bgPrimary,
+                color: textPrimary,
+                outline: 'none',
+                transition: 'border-color 0.2s',
+              }}
+              onFocus={(e) => e.target.style.borderColor = accentColor}
+              onBlur={(e) => e.target.style.borderColor = borderColor}
+            />
           </div>
-        ))}
+        </div>
+        
+        <div style={{ flex: 1, overflow: 'auto', padding: '8px' }}>
+          <div style={{ 
+            fontSize: '11px',
+            color: textSecondary,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            fontWeight: '600',
+            marginBottom: '8px',
+            padding: '0 8px'
+          }}>
+            Languages
+          </div>
+          {files.map((file) => {
+            const isSelected = selectedFile === file.name;
+            const fileLangInfo = languageInfo[file.language] || { icon: '📄', color: textSecondary };
+            return (
+              <div
+                key={file.name}
+                onClick={() => handleFileSelect(file)}
+                style={{
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                  backgroundColor: isSelected ? accentColor : 'transparent',
+                  color: isSelected ? '#ffffff' : textPrimary,
+                  borderRadius: '6px',
+                  marginBottom: '4px',
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  transition: 'all 0.2s',
+                  border: isSelected ? 'none' : `1px solid transparent`,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.backgroundColor = bgTertiary;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>{fileLangInfo.icon}</span>
+                <span style={{ flex: 1 }}>{file.name}</span>
+                <span style={{ 
+                  fontSize: '10px',
+                  opacity: 0.7,
+                  textTransform: 'uppercase'
+                }}>
+                  {file.language}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
+      
       <div
-        style={{ width: '6px', cursor: 'col-resize', background: 'transparent' }}
+        style={{ 
+          width: '4px', 
+          cursor: 'col-resize', 
+          background: 'transparent',
+          transition: 'background 0.2s'
+        }}
         onMouseDown={(e) => startResize('sidebar', e.clientX)}
+        onMouseEnter={(e) => e.currentTarget.style.background = isDark ? '#3e3e42' : '#d4d4d4'}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
       />
 
       {/* Center Panel - Monaco Editor */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '10px', borderBottom: '1px solid #ddd', backgroundColor: headerBg, color: headerColor, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{selectedFile}</span>
-            <span style={{ marginLeft: '10px', fontSize: '12px', color: headerColor === '#fff' ? '#ccc' : '#666' }}>({language})</span>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{ 
+          padding: '12px 16px', 
+          borderBottom: `1px solid ${borderColor}`, 
+          backgroundColor: bgSecondary,
+          color: textPrimary,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: isDark ? '0 2px 4px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.05)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '18px' }}>{langInfo.icon}</span>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: '600' }}>{selectedFile}</div>
+              <div style={{ fontSize: '11px', color: textSecondary, marginTop: '2px' }}>
+                {language.toUpperCase()}
+              </div>
+            </div>
           </div>
-          <div style={{ fontSize: '12px', color: headerColor === '#fff' ? '#ccc' : '#666' }}>
-            {statusText || 'Idle'}
+          <div style={{ 
+            fontSize: '12px', 
+            color: textSecondary,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            {statusText && (
+              <span style={{
+                padding: '4px 10px',
+                borderRadius: '12px',
+                background: isDark ? '#2d2d30' : '#e8e8e8',
+                fontSize: '11px'
+              }}>
+                {statusText}
+              </span>
+            )}
           </div>
         </div>
-        <Editor ref={editorRef} code={code} language={language} onChange={setCode} theme={theme === 'dark' ? 'vs-dark' : 'vs-light'} />
+        <div style={{ flex: 1, position: 'relative' }}>
+          <Editor ref={editorRef} code={code} language={language} onChange={setCode} theme={isDark ? 'vs-dark' : 'vs-light'} />
+        </div>
       </div>
 
       <div
-        style={{ width: '6px', cursor: 'col-resize', background: 'transparent' }}
+        style={{ 
+          width: '4px', 
+          cursor: 'col-resize', 
+          background: 'transparent',
+          transition: 'background 0.2s'
+        }}
         onMouseDown={(e) => startResize('output', e.clientX)}
+        onMouseEnter={(e) => e.currentTarget.style.background = isDark ? '#3e3e42' : '#d4d4d4'}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
       />
 
       {/* Right Panel - Output */}
@@ -259,33 +408,60 @@ export default function Home() {
         <div
           style={{
             position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            padding: '12px 14px',
-            background: toast.type === 'success' ? '#28a745' : toast.type === 'error' ? '#c0392b' : '#444',
-            color: '#fff',
-            borderRadius: '6px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-            fontSize: '13px',
+            bottom: '24px',
+            right: '24px',
+            padding: '14px 18px',
+            background: toast.type === 'success' ? '#10b981' : toast.type === 'error' ? '#ef4444' : '#3b82f6',
+            color: '#ffffff',
+            borderRadius: '8px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+            fontSize: '14px',
+            fontWeight: '500',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            zIndex: 10000,
+            animation: 'slideIn 0.3s ease-out',
           }}
         >
-          {toast.message}
+          <span>{toast.message}</span>
           <button
             onClick={() => setToast(null)}
             style={{
-              marginLeft: '10px',
-              background: 'transparent',
-              color: '#fff',
+              background: 'rgba(255,255,255,0.2)',
+              color: '#ffffff',
               border: 'none',
               cursor: 'pointer',
-              fontSize: '13px',
+              fontSize: '18px',
+              width: '24px',
+              height: '24px',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              transition: 'background 0.2s',
             }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
           >
             ×
           </button>
         </div>
       )}
+
+      <style jsx>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }
-
