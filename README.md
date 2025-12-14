@@ -2,24 +2,6 @@
 
 A scalable, production-ready code execution platform with Monaco Editor integration. Supports multiple programming languages with Docker-based sandboxing, Redis job queuing, and PostgreSQL persistence.
 
-## 🚀 Quick Deploy
-
-**Want to deploy this as a live demo?**
-
-- **🆓 Fly.io (Recommended)**: 100% free forever! See [DEPLOY_FLY.md](./DEPLOY_FLY.md)
-- **Free Options**: See [DEPLOY_FREE.md](./DEPLOY_FREE.md) for all free/freemium platforms
-- **Full Guide**: See [DEPLOY.md](./DEPLOY.md) for complete deployment instructions
-
-**Quick Start with Fly.io** (3 VMs free forever):
-```bash
-# Install Fly CLI
-brew install flyctl
-
-# Sign up and deploy
-fly auth signup
-./deploy-fly.sh
-```
-
 **Local Docker:**
 ```bash
 ./deploy.sh
@@ -188,13 +170,3 @@ Client → API → [Validation] → S3 Upload → DB Insert → Redis Queue → 
                                   S3 Key    Submission   Job Message
                                             Record
 ```
-
-## Next Steps
-
-- Implement worker service to consume jobs from Redis
-- Add test case validation and execution
-- Implement authentication and authorization
-- Add user management and problem repository
-- Set up monitoring and logging
-- Deploy with Docker/Kubernetes
-
